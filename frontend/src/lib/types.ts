@@ -32,14 +32,22 @@ export interface Options {
   content_style?: string;
 }
 
+// One deliverable inside a bundle. A failed type has `error` set and an
+// empty body — the rest of the bundle still completes.
 export interface Artifact {
-  kind: "text" | "image";
+  output_type: string;
   title: string;
   body_markdown: string;
   highlights: string[];
   metadata: Record<string, string>;
+  error: string;
+  kind: string;
   image_path: string;
   image_prompt: string;
+}
+
+export interface Bundle {
+  artifacts: Artifact[];
 }
 
 export interface Transform {
@@ -47,10 +55,9 @@ export interface Transform {
   source_kind: string;
   source_title: string;
   source_text: string;
-  output_type: string;
-  output_kind: string;
+  output_types: string[];
   options: Options;
-  content: Artifact | null;
+  content: Bundle | null;
   status: "processing" | "completed" | "failed";
   stage: string;
   error_message: string;
@@ -65,8 +72,11 @@ export interface StartResponse {
   status_url: string;
 }
 
+// output_type is set on per-type events; a "failed" event is terminal for
+// the job only when output_type is empty.
 export interface SSEEvent {
   step: string;
   status: "processing" | "completed" | "failed";
   message: string;
+  output_type?: string;
 }

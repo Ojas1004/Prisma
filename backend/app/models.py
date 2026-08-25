@@ -19,16 +19,29 @@ class Options(BaseModel):
 
 
 class Artifact(BaseModel):
-    """Kind-discriminated generation result. `kind` tells the frontend how to
-    render it; future kinds (video) extend this additively."""
+    """One generated deliverable inside a bundle, self-identified by
+    output_type. A failed type carries its error here (empty body) so the
+    rest of the bundle still completes."""
 
-    kind: str  # "text" | "image"
+    output_type: str = ""
     title: str = ""
-    body_markdown: str = ""  # text kinds (caption for image kinds)
+    body_markdown: str = ""
     highlights: list[str] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
-    image_path: str = ""  # image kinds, relative to DATA_DIR
-    image_prompt: str = ""  # editable, drives regeneration
+    error: str = ""  # per-type failure; empty = success
+    # Legacy image-flow fields — removal is Task 4 (with generators/image.py).
+    kind: str = "text"
+    image_path: str = ""
+    image_prompt: str = ""
+
+
+class Bundle(BaseModel):
+    """content JSONB: every deliverable of one job, in selection order."""
+
+    artifacts: list[Artifact] = Field(default_factory=list)
+
+    def by_type(self, output_type: str) -> Artifact | None:
+        return next((a for a in self.artifacts if a.output_type == output_type), None)
 
 
 class Transform(BaseModel):
@@ -38,10 +51,9 @@ class Transform(BaseModel):
     source_kind: str  # text | prompt | pdf | image
     source_title: str = ""
     source_text: str = ""
-    output_type: str
-    output_kind: str  # text | image
+    output_types: list[str]
     options: Options = Field(default_factory=Options)
-    content: Artifact | None = None
+    content: Bundle | None = None
     status: str  # processing | completed | failed
     stage: str = ""
     error_message: str = ""
@@ -51,11 +63,14 @@ class Transform(BaseModel):
 
 
 class SSEEvent(BaseModel):
-    """One progress message on a transform's stream."""
+    """One progress message on a transform's stream. output_type is set on
+    per-type events — a "failed" event is terminal for the job only when
+    output_type is empty (job-level failure)."""
 
     step: str
     status: str  # processing | completed | failed
     message: str = ""
+    output_type: str = ""
 
 
 class StartBody(BaseModel):
@@ -64,13 +79,18 @@ class StartBody(BaseModel):
     source_kind: str
     text: str = ""
     title: str = ""
-    output_type: str
+    output_types: list[str] = Field(default_factory=list)
     options: Options = Field(default_factory=Options)
 
 
 class UpdateContentBody(BaseModel):
+    """Operator edit of one artifact — matched by content.output_type."""
+
     content: Artifact
 
 
 class RetryBody(BaseModel):
-    image_prompt: str = ""
+    """Optional subset of types to re-run. Empty = failed/missing types only
+    (or everything, when the whole bundle already succeeded)."""
+
+    output_types: list[str] = Field(default_factory=list)

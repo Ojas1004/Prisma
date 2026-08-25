@@ -6,7 +6,7 @@ import uuid
 import asyncpg
 
 from app import config
-from app.models import Artifact, Options, Transform
+from app.models import Bundle, Options, Transform
 
 _pool: asyncpg.Pool | None = None
 
@@ -32,16 +32,14 @@ def pool() -> asyncpg.Pool:
 
 SELECT_COLUMNS = """
     id, source_kind, source_title, source_path, source_text,
-    output_type, output_kind, options, content, status, stage,
+    output_types, options, content, status, stage,
     error_message, model, created_at, updated_at
 """
 
 
 def _row_to_transform(row: asyncpg.Record, truncate_source: bool = False) -> Transform:
     options = Options(**json.loads(row["options"])) if row["options"] else Options()
-    content = None
-    if row["content"]:
-        content = Artifact(**json.loads(row["content"]))
+    content = Bundle(**json.loads(row["content"])) if row["content"] else None
     source_text = row["source_text"] or ""
     if truncate_source and len(source_text) > 280:
         source_text = source_text[:280] + "…"
@@ -50,8 +48,7 @@ def _row_to_transform(row: asyncpg.Record, truncate_source: bool = False) -> Tra
         source_kind=row["source_kind"],
         source_title=row["source_title"] or "",
         source_text=source_text,
-        output_type=row["output_type"],
-        output_kind=row["output_kind"],
+        output_types=json.loads(row["output_types"]),
         options=options,
         content=content,
         status=row["status"],
@@ -68,20 +65,19 @@ async def insert_transform(
     source_title: str,
     source_path: str,
     source_text: str,
-    output_type: str,
-    output_kind: str,
+    output_types: list[str],
     options: Options,
     model: str,
 ) -> str:
     row = await pool().fetchrow(
         """
         INSERT INTO transforms (source_kind, source_title, source_path, source_text,
-                                output_type, output_kind, options, status, stage, model)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'processing', 'queued', $8)
+                                output_types, options, status, stage, model)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, 'processing', 'queued', $7)
         RETURNING id
         """,
         source_kind, source_title, source_path, source_text,
-        output_type, output_kind, options.model_dump_json(), model,
+        json.dumps(output_types), options.model_dump_json(), model,
     )
     return str(row["id"])
 
@@ -126,7 +122,7 @@ async def update_stage(transform_id: str, stage: str) -> None:
     )
 
 
-async def complete_transform(transform_id: str, artifact: Artifact) -> None:
+async def complete_transform(transform_id: str, bundle: Bundle) -> None:
     await pool().execute(
         """
         UPDATE transforms
@@ -134,7 +130,7 @@ async def complete_transform(transform_id: str, artifact: Artifact) -> None:
             error_message = '', updated_at = NOW()
         WHERE id = $2
         """,
-        artifact.model_dump_json(), transform_id,
+        bundle.model_dump_json(), transform_id,
     )
 
 
@@ -156,10 +152,17 @@ async def reset_for_retry(transform_id: str) -> None:
     )
 
 
-async def update_content(transform_id: str, artifact: Artifact) -> None:
+async def update_bundle(transform_id: str, bundle: Bundle) -> None:
     await pool().execute(
         "UPDATE transforms SET content = $1::jsonb, updated_at = NOW() WHERE id = $2",
-        artifact.model_dump_json(), transform_id,
+        bundle.model_dump_json(), transform_id,
+    )
+
+
+async def update_output_types(transform_id: str, output_types: list[str]) -> None:
+    await pool().execute(
+        "UPDATE transforms SET output_types = $1::jsonb, updated_at = NOW() WHERE id = $2",
+        json.dumps(output_types), transform_id,
     )
 
 

@@ -4,11 +4,14 @@ import asyncio
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+# Manual form parsing yields Starlette's UploadFile, NOT FastAPI's subclass —
+# an isinstance check against fastapi.UploadFile silently misses real uploads.
+from starlette.datastructures import UploadFile
 
 from app import config, db, sources
-from app.models import Options, RetryBody, SSEEvent, StartBody, UpdateContentBody
+from app.models import Artifact, Options, RetryBody, SSEEvent, StartBody, UpdateContentBody
 from app.sse import hub
 
 router = APIRouter()
@@ -29,7 +32,22 @@ def error(status_code: int, code: str, message: str) -> JSONResponse:
     )
 
 
+def _is_terminal(ev: SSEEvent) -> bool:
+    """Per-type failures (output_type set) keep the stream open; only a
+    job-level failure or the final pipeline-completed event closes it."""
+    if ev.status == "failed" and not ev.output_type:
+        return True
+    return ev.step == "pipeline" and ev.status == "completed"
+
+
 # ── Registry ──────────────────────────────────────────────────────────────────
+
+@router.get("/", include_in_schema=False)
+async def root():
+    """This server is API-only (the UI is the Vite frontend on :5173) —
+    a bare visit lands on the interactive docs instead of a 404."""
+    return RedirectResponse("/docs")
+
 
 @router.get("/health")
 async def health():
@@ -71,7 +89,7 @@ async def start(request: Request):
     source_kind = ""
     source_text = ""
     title = ""
-    output_type = ""
+    output_types: list[str] = []
     parsed_options = Options()
     file_payload: bytes | None = None
     file_suffix = ""
@@ -82,13 +100,17 @@ async def start(request: Request):
         except Exception as exc:  # noqa: BLE001 — validation surface
             return error(400, "invalid_body", f"invalid request body: {exc}")
         source_kind, source_text, title = body.source_kind, body.text, body.title
-        output_type, parsed_options = body.output_type, body.options
+        output_types, parsed_options = body.output_types, body.options
     else:
         form = await request.form()
         source_kind = str(form.get("source_kind", ""))
         source_text = str(form.get("text", ""))
         title = str(form.get("title", ""))
-        output_type = str(form.get("output_type", ""))
+        if raw_types := form.get("output_types"):
+            try:
+                output_types = [str(t) for t in json.loads(str(raw_types))]
+            except Exception:  # noqa: BLE001
+                return error(400, "invalid_output_types", "output_types must be a JSON array")
         if raw_options := form.get("options"):
             try:
                 parsed_options = Options(**json.loads(str(raw_options)))
@@ -101,9 +123,13 @@ async def start(request: Request):
             if not title:
                 title = upload.filename or ""
 
-    type_cfg = cfg.type_by_key(output_type)
-    if type_cfg is None:
-        return error(400, "invalid_output_type", f"unknown output_type {output_type!r}")
+    # Dedupe preserving selection order, then validate against the registry.
+    output_types = list(dict.fromkeys(output_types))
+    if not output_types:
+        return error(400, "missing_output_types", "select at least one output type")
+    unknown = [ot for ot in output_types if cfg.type_by_key(ot) is None]
+    if unknown:
+        return error(400, "invalid_output_type", f"unknown output types: {unknown!r}")
 
     if source_kind in ("text", "prompt"):
         if not source_text.strip():
@@ -136,8 +162,7 @@ async def start(request: Request):
         source_title=title,
         source_path="",
         source_text=source_text,
-        output_type=output_type,
-        output_kind=type_cfg.kind,
+        output_types=output_types,
         options=parsed_options,
         model=runner.model,
     )
@@ -193,7 +218,7 @@ async def stream(transform_id: str, request: Request):
 
         # Terminal rows: replay the outcome and close immediately.
         if t.status == "completed":
-            yield frame(SSEEvent(step="pipeline", status="completed", message="Your artifact is ready"))
+            yield frame(SSEEvent(step="pipeline", status="completed", message="Your deliverables are ready"))
             return
         if t.status == "failed":
             yield frame(SSEEvent(step=t.stage or "pipeline", status="failed", message=t.error_message))
@@ -203,7 +228,10 @@ async def stream(transform_id: str, request: Request):
         queue = hub.subscribe(transform_id)
         try:
             if t.stage and t.stage != "queued":
-                yield frame(SSEEvent(step=t.stage, status="processing", message="Resuming..."))
+                # Per-type stages are "<step>:<type>" — carry the type so a
+                # reconnecting client can mark that deliverable as running.
+                stage_type = t.stage.split(":", 1)[1] if ":" in t.stage else ""
+                yield frame(SSEEvent(step=t.stage, status="processing", message="Resuming...", output_type=stage_type))
             while True:
                 if await request.is_disconnected():
                     return
@@ -213,7 +241,7 @@ async def stream(transform_id: str, request: Request):
                     yield ": keepalive\n\n"
                     continue
                 yield frame(ev)
-                if ev.status == "failed" or (ev.step == "pipeline" and ev.status == "completed"):
+                if _is_terminal(ev):
                     return
         finally:
             hub.unsubscribe(transform_id, queue)
@@ -233,15 +261,22 @@ async def update_content(transform_id: str, body: UpdateContentBody):
     if t is None:
         return error(404, "transform_not_found", "transform not found")
     if t.content is None:
-        return error(409, "content_not_ready", "artifact not generated yet")
+        return error(409, "content_not_ready", "no deliverables generated yet")
 
-    # Kind and stored paths are server-owned — edits can't change them.
     edited = body.content
-    edited.kind = t.content.kind
-    edited.image_path = t.content.image_path
+    existing = t.content.by_type(edited.output_type)
+    if existing is None:
+        return error(404, "artifact_not_found", f"no artifact for output type {edited.output_type!r}")
 
-    await db.update_content(transform_id, edited)
-    t.content = edited
+    # Server-owned fields — edits can't change them.
+    edited.kind = existing.kind
+    edited.image_path = existing.image_path
+    edited.error = existing.error
+
+    t.content.artifacts = [
+        edited if a.output_type == edited.output_type else a for a in t.content.artifacts
+    ]
+    await db.update_bundle(transform_id, t.content)
     return ok(t.model_dump(mode="json"))
 
 
@@ -253,54 +288,112 @@ async def retry(transform_id: str, request: Request, body: RetryBody | None = No
     if t.status == "processing":
         return error(409, "still_processing", "transform is already running")
 
+    retry_types = list(dict.fromkeys(body.output_types)) if body else []
+    outside = [ot for ot in retry_types if ot not in t.output_types]
+    if outside:
+        return error(400, "invalid_output_type", f"not part of this job: {outside!r}")
+
     await db.reset_for_retry(transform_id)
-    request.app.state.runner.start(transform_id, (body.image_prompt if body else "") or "")
+    request.app.state.runner.start(transform_id, retry_types or None)
     return ok(
         {"id": transform_id, "stream_url": f"/api/transform/{transform_id}/stream"},
         status_code=202,
     )
 
 
+def _artifact_lines(artifact: Artifact) -> list[str]:
+    lines = []
+    if artifact.title:
+        lines.append(f"# {artifact.title}\n")
+    lines.append(artifact.body_markdown)
+    if artifact.highlights:
+        lines.append("\n## Key Points\n")
+        lines.extend(f"- {h}" for h in artifact.highlights)
+    return lines
+
+
 @router.get("/api/transform/{transform_id}/export")
-async def export(transform_id: str, format: str = "md"):
+async def export(transform_id: str, format: str = "md", type: str = ""):
     t = await db.get_transform(transform_id)
     if t is None:
         return error(404, "transform_not_found", "transform not found")
     if t.content is None:
-        return error(409, "content_not_ready", "artifact not generated yet")
+        return error(409, "content_not_ready", "no deliverables generated yet")
 
-    lines = []
-    if t.content.title:
-        lines.append(f"# {t.content.title}\n")
-    lines.append(t.content.body_markdown)
-    if t.content.highlights:
-        lines.append("\n## Key Points\n")
-        lines.extend(f"- {h}" for h in t.content.highlights)
+    if type:
+        artifact = t.content.by_type(type)
+        if artifact is None or artifact.error:
+            return error(404, "artifact_not_found", f"no successful artifact for type {type!r}")
+        lines = _artifact_lines(artifact)
+        stem = f"{type}"
+    else:
+        succeeded = [a for a in t.content.artifacts if not a.error]
+        if not succeeded:
+            return error(409, "content_not_ready", "no successful deliverables to export")
+        lines = []
+        for i, artifact in enumerate(succeeded):
+            if i:
+                lines.append("\n\n" + "=" * 40 + "\n\n")
+            lines.extend(_artifact_lines(artifact))
+        stem = "bundle"
+
     body = "\n".join(lines)
-
     if format == "md":
         return Response(
             body,
             media_type="text/markdown; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="artifact.md"'},
+            headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
         )
     if format == "txt":
         return Response(
             body,
             media_type="text/plain; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="artifact.txt"'},
+            headers={"Content-Disposition": f'attachment; filename="{stem}.txt"'},
         )
     return error(400, "invalid_format", "format must be md or txt")
 
 
-@router.get("/api/transform/{transform_id}/image")
-async def image(transform_id: str):
+@router.delete("/api/transform/{transform_id}/artifact/{output_type}")
+async def delete_artifact(transform_id: str, output_type: str):
+    """Remove one deliverable from a finished bundle (and its selection)."""
     t = await db.get_transform(transform_id)
     if t is None:
         return error(404, "transform_not_found", "transform not found")
-    if t.content is None or not t.content.image_path:
+    if t.status == "processing":
+        return error(409, "still_processing", "transform is still running")
+    if t.content is None or t.content.by_type(output_type) is None:
+        return error(404, "artifact_not_found", f"no artifact for output type {output_type!r}")
+    if len(t.content.artifacts) <= 1:
+        return error(409, "last_artifact", "cannot remove the last deliverable — delete the job instead")
+
+    removed = t.content.by_type(output_type)
+    t.content.artifacts = [a for a in t.content.artifacts if a.output_type != output_type]
+    await db.update_bundle(transform_id, t.content)
+    await db.update_output_types(
+        transform_id, [ot for ot in t.output_types if ot != output_type]
+    )
+    if removed and removed.image_path:
+        try:
+            (config.DATA_DIR / removed.image_path).unlink(missing_ok=True)
+        except OSError:
+            pass
+    t.output_types = [ot for ot in t.output_types if ot != output_type]
+    return ok(t.model_dump(mode="json"))
+
+
+@router.get("/api/transform/{transform_id}/image")
+async def image(transform_id: str):
+    """Legacy image-flow endpoint — serves the first artifact with a stored
+    image. Scheduled for removal with generators/image.py (Task 4)."""
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+    artifact = next(
+        (a for a in (t.content.artifacts if t.content else []) if a.image_path), None
+    )
+    if artifact is None:
         return error(404, "image_not_found", "no image for this transform")
-    path = config.DATA_DIR / t.content.image_path
+    path = config.DATA_DIR / artifact.image_path
     if not path.is_file():
         return error(404, "image_not_found", "image file missing")
     media_types = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg"}
@@ -317,13 +410,14 @@ async def delete(transform_id: str):
     await db.delete_transform(transform_id)
 
     # Best-effort file cleanup.
-    for p in (
-        Path(source_path) if source_path else None,
-        (config.DATA_DIR / t.content.image_path) if t.content and t.content.image_path else None,
-    ):
-        if p is not None:
-            try:
-                p.unlink(missing_ok=True)
-            except OSError:
-                pass
+    paths = [Path(source_path)] if source_path else []
+    if t.content:
+        paths.extend(
+            config.DATA_DIR / a.image_path for a in t.content.artifacts if a.image_path
+        )
+    for p in paths:
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
     return ok({"deleted": True})

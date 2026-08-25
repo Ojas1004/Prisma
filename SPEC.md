@@ -112,10 +112,10 @@ spec-required behavior.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | **React 19 + Vite 6** (TypeScript, strict) | Plain SPA, no router, no styling library — deliberately minimal; pipeline correctness over visuals |
+| Frontend | **React 19 + Vite 6** (TypeScript, strict) | SPA, no router, no styling/animation libraries. **"Terminal CLI" design system** (owner-approved once the pipeline was proven live): dark-only phosphor-green hacker/CRT aesthetic — tokens, global element skin, and effects (blink/glitch/scanlines/typewriter) all hand-rolled in `src/styles/terminal.css`; JetBrains Mono bundled via `@fontsource/jetbrains-mono` (the only styling-adjacent dep, chosen so the demo renders offline). Brand name **"TERMINAL" is a placeholder** until the project name is finalized |
 | Backend | **Python 3.13 + FastAPI** (uvicorn, async throughout) | |
 | Database | **PostgreSQL 16** | host port **5434**; plain SQL migration auto-applied on container init; raw SQL via `asyncpg`, no ORM. Run via podman on this machine — see "Running locally" below |
-| LLM (core) | **Groq API** — `https://api.groq.com/openai/v1`, OpenAI-compatible | Env: `GROQ_API_KEY` (required), `GROQ_CHAT_MODEL` (default `openai/gpt-oss-120b`), `GROQ_VISION_MODEL` (default `qwen/qwen3.6-27b`, used automatically when a message carries image parts), `GROQ_BASE_URL`. Model catalog moves fast — the original `llama-3.3-70b-versatile` / `llama-4-scout` defaults were retired by Aug 2026; verify against `GET /openai/v1/models` (or console.groq.com/docs/models) if generation 404s with `model_not_found` |
+| LLM (core) | **Groq API** — `https://api.groq.com/openai/v1`, OpenAI-compatible | Env: `GROQ_API_KEY` (required), `GROQ_CHAT_MODEL` (default `openai/gpt-oss-120b`), `GROQ_VISION_MODEL` (default `qwen/qwen3.6-27b`, used automatically when a message carries image parts), `GROQ_BASE_URL`, plus the two budget knobs below. Model catalog moves fast — the original `llama-3.3-70b-versatile` / `llama-4-scout` defaults were retired by Aug 2026; verify against `GET /openai/v1/models` (or console.groq.com/docs/models) if generation 404s with `model_not_found` |
 | LLM (optional, disabled) | **Gemini API** for image/video rendering | Env: `GEMINI_API_KEY` + flag `ENABLE_VISUAL_LAYER` (default: off). Not yet implemented — see §8 |
 | Jobs | asyncio background tasks, in-process SSE hub | No queue infrastructure |
 | Files | Local disk `SIH/backend/data/` (gitignored) | uploads/ and artifacts/ |
@@ -127,6 +127,33 @@ earlier iteration briefly targeted the similarly-named xAI Grok and was
 corrected), no Gemini in the core pipeline, no GCS/cloud storage.
 
 API responses all use the envelope `{"success": bool, "data": …, "error": {"code", "message"}}`.
+
+### Groq generation budget — why `GROQ_MAX_TOKENS` / `GROQ_REASONING_EFFORT` exist
+
+**The default chat model is a *reasoning* model: its thinking tokens spend the
+same completion budget as the answer.** In JSON mode, a response truncated
+mid-document is rejected **server-side** with `400 json_validate_failed` and
+**no content returned** — so a budget overrun looks like a prompt/escaping bug
+but is not one. This was diagnosed live: the identical prompt returned
+perfectly valid JSON (escapes, emoji, em dashes, hashtags all intact) with
+`response_format` removed, and Groq's own message read *"max completion tokens
+reached before generating a valid document"*.
+
+- `GROQ_MAX_TOKENS` (default **8000**) — explicit per-deliverable ceiling.
+- `GROQ_REASONING_EFFORT` (default **`low`**) — keeps the budget for the
+  deliverable rather than the model's reasoning. At default effort the same
+  prompt failed repeatedly; at `low` it completed in ~413 tokens.
+
+If a long deliverable legitimately needs more room, raise `GROQ_MAX_TOKENS`.
+Do **not** "fix" a `json_validate_failed` by rewriting prompts to beg for
+valid JSON — check the budget first. `llm.py` translates this error into an
+actionable message and resamples once; a `finish_reason=length` response is
+also raised rather than silently returned truncated.
+
+**Free-tier rate limits are 8,000 tokens/minute** — a 7-type job routinely
+trips them. `llm.py` obeys Groq's own `Retry-After` / *"try again in 18.33s"*
+hint (capped at 30 s) instead of a fixed short backoff; verified engaging 4×
+during a successful 7/7 run.
 
 ### Running locally (this machine — Fedora, no docker)
 
@@ -191,14 +218,22 @@ SIH/
 │           └── image.py             LEGACY Groq-SVG renderer — scheduled for deletion (§8);
 │                                    superseded by infographic-as-text + Gemini visual layer
 └── frontend/
-    ├── package.json                 react, react-dom; vite, typescript (no other deps)
+    ├── package.json                 react, react-dom, @fontsource/jetbrains-mono;
+    │                                vite, typescript (no other deps)
     ├── vite.config.ts               stock @vitejs/plugin-react
     ├── tsconfig.json                strict, bundler resolution
-    ├── index.html
+    ├── index.html                   title TERMINAL, dark color-scheme, bg pre-paint
     └── src/
-        ├── main.tsx                 React root
-        ├── App.tsx                  entire UI: source form, output-type select, SSE
-        │                            progress, result rendering, retry/delete
+        ├── main.tsx                 React root; imports fonts + terminal.css
+        ├── App.tsx                  state-based view switch home ⇄ transform (no router)
+        ├── styles/terminal.css      Terminal CLI design tokens + global element skin
+        │                            + effects (blink, glitch, scanlines, panes, buttons)
+        ├── components/Typewriter.tsx  char-by-char hero reveal + blinking █ cursor,
+        │                            reduced-motion aware
+        ├── pages/
+        │   ├── Home.tsx             homepage: nav (login stub), typewriter hero, live
+        │   │                        STATUS from /health, 4 stat panes, output registry
+        │   └── Transform.tsx        transform console (former App.tsx UI, logic unchanged)
         └── lib/
             ├── api.ts               BASE_URL (VITE_API_URL, default localhost:8000),
             │                        envelope-unwrapping request(), EventSource stream
@@ -219,10 +254,9 @@ CREATE TABLE IF NOT EXISTS transforms (
     source_title  TEXT DEFAULT '',
     source_path   TEXT DEFAULT '',             -- uploaded file under data/uploads/
     source_text   TEXT DEFAULT '',             -- pasted / extracted text
-    output_type   TEXT NOT NULL,               -- ⚠ single type; multi-select migration pending (§8)
-    output_kind   TEXT NOT NULL,               -- text | image — ⚠ to be dropped (§8)
-    options       JSONB DEFAULT '{}'::jsonb,
-    content       JSONB,                       -- one Artifact; becomes a bundle (§8)
+    output_types  JSONB NOT NULL,              -- ordered list of selected types
+    options       JSONB DEFAULT '{}'::jsonb,   -- the 6 generation parameters
+    content       JSONB,                       -- bundle: {"artifacts": [...]}
     status        TEXT NOT NULL DEFAULT 'processing',  -- processing | completed | failed
     stage         TEXT DEFAULT '',             -- current stage, replayed on SSE reconnect
     error_message TEXT DEFAULT '',
@@ -242,12 +276,13 @@ migration files.
 | Model | Represents |
 |---|---|
 | `Options` | The 6 generation parameters (per §7), stored as JSONB: `target_audience`, `tone`, `language`, `level_of_detail`, `communication_objective`, `content_style` — keys match prompts.json `parameters` entries |
-| `Artifact` | One generated deliverable. Current: `kind` ("text"/"image"), `title`, `body_markdown`, `highlights[]`, `metadata{}`, `image_path`, `image_prompt`. Target (§8): gains `output_type` + `error`, drops `kind`/`image_path`/`image_prompt` from the core (visual layer owns those) |
-| `Transform` | Full row surfaced over the API (content nested as `Artifact`) |
-| `SSEEvent` | `{step, status: processing|completed|failed, message}` |
-| `StartBody` | JSON start request: `source_kind`, `text`, `title`, `output_type`, `options` |
-| `UpdateContentBody` | `{content: Artifact}` for operator edits |
-| `RetryBody` | `{image_prompt}` (legacy SVG flow; slated for removal) |
+| `Artifact` | One deliverable inside a bundle: `output_type`, `title`, `body_markdown`, `highlights[]`, `metadata{}`, `error` (per-type failure; empty = success). Legacy `kind`/`image_path`/`image_prompt` linger until Task 4 strips them |
+| `Bundle` | `{artifacts: [Artifact]}` — every deliverable of one job, in selection order; stored in `content` JSONB |
+| `Transform` | Full row surfaced over the API (`output_types: [str]`, content nested as `Bundle`) |
+| `SSEEvent` | `{step, status: processing|completed|failed, message, output_type}` — `output_type` set on per-type events; a `failed` event is terminal only when `output_type` is empty |
+| `StartBody` | JSON start request: `source_kind`, `text`, `title`, `output_types: []`, `options` |
+| `UpdateContentBody` | `{content: Artifact}` — edits the bundle artifact matching `content.output_type` |
+| `RetryBody` | `{output_types: []}` — subset to re-run; empty = failed/missing only (or all if none failed) |
 
 ---
 
@@ -259,25 +294,25 @@ All under `http://localhost:8000`. Envelope on every JSON response.
 |---|---|---|
 | `GET /health` | liveness | `{status: "ok"}` |
 | `GET /api/output-types` | registry for the frontend picker + parameters form | `{output_types: [{type, kind, label, description}], parameters: [{key, label, kind, placeholder, options[]}]}` |
-| `POST /api/transform/start` | create + start a job | JSON `StartBody` (text/prompt) or multipart with `file` + same fields as form strings (`options` as JSON string). → 202 `{id, stream_url, status_url}` |
+| `POST /api/transform/start` | create + start a job | JSON `StartBody` (text/prompt) or multipart with `file` + same fields as form strings (`output_types` + `options` as JSON strings). Types are deduped preserving order and validated. → 202 `{id, stream_url, status_url}` |
 | `GET /api/transform/list` | history, newest first | `{transforms: [Transform]}` (source_text truncated to 280 chars) |
 | `GET /api/transform/{id}` | full row | `Transform` |
-| `GET /api/transform/{id}/stream` | SSE progress | `data:` frames of `SSEEvent`; terminal = `status=failed` or `step=pipeline & status=completed`; already-terminal rows replay one frame and close; 15 s keepalive comments |
-| `PUT /api/transform/{id}/content` | save operator edits | `UpdateContentBody` → updated `Transform` (409 if not generated yet) |
-| `POST /api/transform/{id}/retry` | re-run a finished/failed job | optional `{image_prompt}` → 202 `{id, stream_url}` (409 while running) |
-| `GET /api/transform/{id}/export?format=md\|txt` | download deliverable | file attachment built from title/body/highlights |
-| `GET /api/transform/{id}/image` | serve generated visual (legacy SVG flow) | image file by extension |
+| `GET /api/transform/{id}/stream` | SSE progress | `data:` frames of `SSEEvent`; terminal = (`status=failed` with empty `output_type`) or `step=pipeline & status=completed` — per-type failures keep the stream open; already-terminal rows replay one frame and close; the resume frame carries the in-flight type; 15 s keepalive comments |
+| `PUT /api/transform/{id}/content` | save operator edits of one artifact | `UpdateContentBody`, matched by `content.output_type` → updated `Transform` (404 unknown type, 409 if not generated yet) |
+| `POST /api/transform/{id}/retry` | re-run all/failed/specific types | `RetryBody {output_types: []}` — empty re-runs failed/missing (or all if none failed); a subset re-runs exactly those, keeping other artifacts untouched → 202 (409 while running) |
+| `GET /api/transform/{id}/export?format=md\|txt&type=` | download deliverables | with `type`: that artifact; without: all successful artifacts joined with `====` dividers |
+| `DELETE /api/transform/{id}/artifact/{output_type}` | remove one deliverable from the bundle + selection | updated `Transform` (409 on the last one — delete the job instead) |
+| `GET /api/transform/{id}/image` | legacy SVG flow: first artifact with an image | image file by extension (removal in Task 4) |
 | `DELETE /api/transform/{id}` | delete row + stored files | `{deleted: true}` |
 
-Planned route changes for multi-select (§8): `start` takes `output_types: []`;
-`export` gains `&type=<output_type>`; `retry` re-runs only failed types;
-`/{id}/visual` appears later as the visual-layer entry point.
-
-Job flow: `start` inserts the row and launches an asyncio task
-(`runner.py`). Stages published over SSE and stamped on the row:
-`reading_source` → `generating` (target: `generating:<type>` per selected
-type) → `saving` → terminal event. Failures set `status=failed` +
-`error_message`; retry resets and re-runs the same row.
+Job flow: `start` inserts the row and launches an asyncio task (`runner.py`,
+job timeout 900 s). The source is resolved **once**, then the selected types
+generate **sequentially** (deliberate: Groq free-tier rate limits). Stages
+published over SSE and stamped on the row: `reading_source` →
+`generating:<type>` per type (with per-type `completed`/`failed` events) →
+`saving` → terminal event. A failed type records `error` on its artifact; the
+job completes if ≥1 type succeeds and fails only when all do. `/{id}/visual`
+appears later as the visual-layer entry point (§8).
 
 ---
 
@@ -360,21 +395,34 @@ pypdf, `image` attached as a data-URI part (Groq vision model auto-selected).
       `parameters` so the frontend form can be data-driven; `types.ts`/`api.ts`
       mirrors updated (no frontend form UI yet — that's frontend work in
       Task 3)
+- [x] **Terminal CLI homepage + design system:** `terminal.css` tokens/skin,
+      typewriter hero ("COMPILE ANY INPUT INTO ANY OUTPUT"), nav with login
+      stub, live STATUS line from `/health`, 4 stat panes (real numbers only:
+      7 types / 3 formats / $0 / 6 params), output registry listing from the
+      API; old App UI moved verbatim to `pages/Transform.tsx` behind a
+      state-based view switch. All animations gated on `prefers-reduced-motion`
 - [x] **First live end-to-end run (against real Groq + podman Postgres):**
       twitter_post with parameters set — generation honors them. Groq's
       catalog had retired both old model defaults; defaults now
       `openai/gpt-oss-120b` (chat) + `qwen/qwen3.6-27b` (vision, verified
       accepting image parts)
 
+- [x] **Multi-select bundles (was Task 3), verified live:** everything §§5-6
+      now describe — `output_types JSONB` schema (volume recreated), bundle
+      content, sequential per-type generation with per-type SSE, partial
+      failure per artifact, subset retry (verified: single-type retry changed
+      only that artifact's body hash), per-artifact delete + export `?type=`.
+      Frontend: transform console fully reskinned — `[x]` bracket checkboxes,
+      prompt-style `key:~$` parameters panel (select defaults prefilled:
+      neutral/English/standard/factual), per-type `[OK]/[..]/[ERR]` progress
+      lines, one bordered pane per artifact with its own retry/export/remove.
+      Bonus fix found by first-ever live multipart test: manual form parsing
+      yields Starlette's `UploadFile`, so the `isinstance` check against
+      FastAPI's subclass silently rejected every real upload — now checks the
+      Starlette class
+
 ### Not done — pending work, in order
 
-3. **Multi-select bundles (Task 3):** `output_types: []` on start; runner
-   resolves source once, loops selected types sequentially with
-   `generating:<type>` SSE steps; `content = {"artifacts": [...]}`; per-type
-   failure recorded on the artifact (`error`), job completes if ≥1 succeeds;
-   retry re-runs only failed/missing types; schema change (`output_types
-   JSONB`, drop `output_kind`); export gains `?type=`; frontend: checkboxes +
-   bundle rendering.
 4. **File split (Task 4 prep):** rename `generators/text.py` →
    `text_generator.py`; **delete** `generators/image.py` (legacy Groq-SVG
    renderer, superseded by infographic-as-text — deletion proposed, owner
@@ -393,13 +441,11 @@ pypdf, `image` attached as a data-URI part (Groq vision model auto-selected).
 8. Deferred (post-core): edit UI for bundles, export DOCX/PDF, URL ingestion,
    history view polish, auth.
 
-### Known stale spots (fix during items 3-4, don't be confused by them)
+### Known stale spots (fix during Task 4, don't be confused by them)
 
-- `routes.py`/`App.tsx` still single-type (`output_type` string); `App.tsx`
-  has no generation-parameters form yet (the API already serves the
-  definitions for it).
-- `OutputType.kind` / `output_kind` / `Kind` dispatch still exist as legacy
-  plumbing until the Task 3 schema change and Task 4 `image.py` deletion.
+- `OutputType.kind` / `Kind` dispatch / `Artifact.kind`/`image_path`/
+  `image_prompt` / the `/image` route still exist as legacy plumbing until
+  the Task 4 `image.py` deletion.
 - README still says "5 text types + 1 image type" era wording in places.
 
 ---
@@ -420,9 +466,13 @@ pypdf, `image` attached as a data-URI part (Groq vision model auto-selected).
 6. **Stack is settled:** React+Vite / FastAPI / PostgreSQL / Groq. Earlier
    Go+Redis and Next.js iterations were deliberately discarded. The SARAL repo
    around `SIH/` is reference-only — never modify it.
-7. **Frontend stays deliberately plain** until the pipeline is proven
-   end-to-end — no styling libraries, no routing. Priority is the working
-   loop, not visual design.
+7. **Frontend design:** the original "stays plain until the pipeline is
+   proven" constraint was satisfied and lifted by the owner after the first
+   live end-to-end run — the **Terminal CLI design system** (§3) is now the
+   product's visual identity. Still binding: **no router** (state-based view
+   switch), **no styling/animation libraries** (the design system is
+   hand-rolled CSS; `@fontsource/jetbrains-mono` font files are the only
+   addition), and "TERMINAL" is a placeholder brand name.
 8. **prompts.json is the registry.** New deliverable types and parameters are
    JSON edits, not code. Keep it that way.
 9. **Postgres access is raw SQL via asyncpg** (no ORM); schema changes go into

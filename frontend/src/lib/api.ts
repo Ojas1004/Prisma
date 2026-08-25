@@ -19,7 +19,7 @@ export interface StartParams {
   source_kind: "text" | "prompt" | "pdf" | "image";
   text?: string;
   title?: string;
-  output_type: string;
+  output_types: string[];
   options?: Options;
   file?: File | null;
 }
@@ -28,7 +28,7 @@ export function startTransform(params: StartParams): Promise<StartResponse> {
   if (params.file) {
     const form = new FormData();
     form.set("source_kind", params.source_kind);
-    form.set("output_type", params.output_type);
+    form.set("output_types", JSON.stringify(params.output_types));
     if (params.text) form.set("text", params.text);
     if (params.title) form.set("title", params.title);
     if (params.options) form.set("options", JSON.stringify(params.options));
@@ -42,7 +42,7 @@ export function startTransform(params: StartParams): Promise<StartResponse> {
       source_kind: params.source_kind,
       text: params.text ?? "",
       title: params.title ?? "",
-      output_type: params.output_type,
+      output_types: params.output_types,
       options: params.options ?? {},
     }),
   });
@@ -52,11 +52,13 @@ export function getTransform(id: string): Promise<Transform> {
   return request(`/api/transform/${id}`);
 }
 
-export function retryTransform(id: string, imagePrompt = ""): Promise<StartResponse> {
+/** Empty outputTypes = backend re-runs failed/missing types (or all, if the
+ * whole bundle succeeded). A subset re-runs exactly those types. */
+export function retryTransform(id: string, outputTypes: string[] = []): Promise<StartResponse> {
   return request(`/api/transform/${id}/retry`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image_prompt: imagePrompt }),
+    body: JSON.stringify({ output_types: outputTypes }),
   });
 }
 
@@ -64,9 +66,13 @@ export function deleteTransform(id: string): Promise<{ deleted: boolean }> {
   return request(`/api/transform/${id}`, { method: "DELETE" });
 }
 
-export function imageUrl(id: string): string {
-  // Cache-buster so a retried image isn't shadowed by the browser cache.
-  return `${BASE_URL}/api/transform/${id}/image?t=${Date.now()}`;
+export function deleteArtifact(id: string, outputType: string): Promise<Transform> {
+  return request(`/api/transform/${id}/artifact/${outputType}`, { method: "DELETE" });
+}
+
+export function exportUrl(id: string, format: "md" | "txt", outputType = ""): string {
+  const type = outputType ? `&type=${encodeURIComponent(outputType)}` : "";
+  return `${BASE_URL}/api/transform/${id}/export?format=${format}${type}`;
 }
 
 // The stream needs no auth, so native EventSource is enough.

@@ -26,6 +26,15 @@ GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "openai/gpt-oss-120b")
 # Used automatically whenever a message carries an image part (image sources).
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 
+# Headroom for one deliverable. The default chat model is a *reasoning* model:
+# its thinking tokens spend the same completion budget as the answer, and in
+# JSON mode a response truncated mid-document is rejected server-side as
+# json_validate_failed (no partial content returned). Both knobs below keep
+# generation inside the budget; raise MAX_TOKENS for very long deliverables.
+GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "8000"))
+# low | medium | high — "low" leaves the budget for the deliverable itself.
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
 
