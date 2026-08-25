@@ -1,0 +1,24 @@
+# Local infra for SIH Transform — Postgres only.
+# Host port 5434 avoids clashing with SARAL's local compose (5433) and any
+# system Postgres (5432).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sih-transform-postgres
+    environment:
+      POSTGRES_USER: sih
+      POSTGRES_PASSWORD: sih
+      POSTGRES_DB: sih_transform
+    ports:
+      - "5434:5432"
+    volumes:
+      - sih_pgdata:/var/lib/postgresql/data
+      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sih -d sih_transform"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  sih_pgdata:

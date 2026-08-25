@@ -1,0 +1,329 @@
+"""HTTP routes. Every JSON response uses the {success, data, error} envelope."""
+
+import asyncio
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+
+from app import config, db, sources
+from app.models import Options, RetryBody, SSEEvent, StartBody, UpdateContentBody
+from app.sse import hub
+
+router = APIRouter()
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+# ── Envelope helpers ──────────────────────────────────────────────────────────
+
+def ok(data, status_code: int = 200) -> JSONResponse:
+    return JSONResponse({"success": True, "data": data}, status_code=status_code)
+
+
+def error(status_code: int, code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        {"success": False, "error": {"code": code, "message": message}},
+        status_code=status_code,
+    )
+
+
+# ── Registry ──────────────────────────────────────────────────────────────────
+
+@router.get("/health")
+async def health():
+    return ok({"status": "ok"})
+
+
+@router.get("/api/output-types")
+async def output_types(request: Request):
+    """The frontend's registry: selectable output types plus the parameter
+    definitions it renders the generation-parameters form from."""
+    cfg = request.app.state.prompts
+    return ok({
+        "output_types": [
+            {"type": t.type, "kind": t.kind, "label": t.label, "description": t.description}
+            for t in cfg.types
+        ],
+        "parameters": [
+            {
+                "key": p.key,
+                "label": p.label,
+                "kind": p.kind,
+                "placeholder": p.placeholder,
+                "options": list(p.options.keys()),
+            }
+            for p in cfg.parameters
+        ],
+    })
+
+
+# ── Start ─────────────────────────────────────────────────────────────────────
+
+@router.post("/api/transform/start")
+async def start(request: Request):
+    """Accepts JSON (text/prompt sources) or multipart (pdf/image/txt/md file).
+    Parsed manually so one endpoint can serve both content types."""
+    cfg = request.app.state.prompts
+    runner = request.app.state.runner
+
+    source_kind = ""
+    source_text = ""
+    title = ""
+    output_type = ""
+    parsed_options = Options()
+    file_payload: bytes | None = None
+    file_suffix = ""
+
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            body = StartBody(**(await request.json()))
+        except Exception as exc:  # noqa: BLE001 — validation surface
+            return error(400, "invalid_body", f"invalid request body: {exc}")
+        source_kind, source_text, title = body.source_kind, body.text, body.title
+        output_type, parsed_options = body.output_type, body.options
+    else:
+        form = await request.form()
+        source_kind = str(form.get("source_kind", ""))
+        source_text = str(form.get("text", ""))
+        title = str(form.get("title", ""))
+        output_type = str(form.get("output_type", ""))
+        if raw_options := form.get("options"):
+            try:
+                parsed_options = Options(**json.loads(str(raw_options)))
+            except Exception:  # noqa: BLE001
+                return error(400, "invalid_options", "options must be a JSON object")
+        upload = form.get("file")
+        if isinstance(upload, UploadFile):
+            file_suffix = Path(upload.filename or "").suffix.lower()
+            file_payload = await upload.read()
+            if not title:
+                title = upload.filename or ""
+
+    type_cfg = cfg.type_by_key(output_type)
+    if type_cfg is None:
+        return error(400, "invalid_output_type", f"unknown output_type {output_type!r}")
+
+    if source_kind in ("text", "prompt"):
+        if not source_text.strip():
+            return error(400, "missing_text", "text is required for text/prompt sources")
+        file_payload = None
+
+    elif source_kind in ("pdf", "image"):
+        if file_payload is None:
+            return error(400, "missing_file", "file is required for pdf/image sources")
+        if len(file_payload) == 0:
+            return error(400, "empty_file", "uploaded file is empty")
+        if len(file_payload) > MAX_UPLOAD_BYTES:
+            return error(400, "file_too_large", "file exceeds the 25 MB limit")
+
+        if file_suffix in (".txt", ".md"):
+            # Text carried as a file — read it straight into source_text.
+            source_kind = "text"
+            source_text = file_payload.decode("utf-8", errors="replace")
+            file_payload = None
+        elif source_kind == "pdf" and file_suffix != ".pdf":
+            return error(400, "unsupported_file", "document must be pdf, txt, or md")
+        elif source_kind == "image" and file_suffix not in sources.IMAGE_MIMES:
+            return error(400, "unsupported_image", "image must be png, jpg, or webp")
+
+    else:
+        return error(400, "invalid_source_kind", "source_kind must be text, prompt, pdf, or image")
+
+    transform_id = await db.insert_transform(
+        source_kind=source_kind,
+        source_title=title,
+        source_path="",
+        source_text=source_text,
+        output_type=output_type,
+        output_kind=type_cfg.kind,
+        options=parsed_options,
+        model=runner.model,
+    )
+
+    if file_payload is not None:
+        uploads_dir = config.DATA_DIR / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        dst = uploads_dir / f"{transform_id}{file_suffix}"
+        await asyncio.to_thread(dst.write_bytes, file_payload)
+        await db.pool().execute(
+            "UPDATE transforms SET source_path = $1 WHERE id = $2", str(dst), transform_id
+        )
+
+    runner.start(transform_id)
+
+    return ok(
+        {
+            "id": transform_id,
+            "stream_url": f"/api/transform/{transform_id}/stream",
+            "status_url": f"/api/transform/{transform_id}",
+        },
+        status_code=202,
+    )
+
+
+# ── Read ──────────────────────────────────────────────────────────────────────
+
+@router.get("/api/transform/list")
+async def list_transforms():
+    transforms = await db.list_transforms()
+    return ok({"transforms": [t.model_dump(mode="json") for t in transforms]})
+
+
+@router.get("/api/transform/{transform_id}")
+async def get_transform(transform_id: str):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+    return ok(t.model_dump(mode="json"))
+
+
+# ── SSE ───────────────────────────────────────────────────────────────────────
+
+@router.get("/api/transform/{transform_id}/stream")
+async def stream(transform_id: str, request: Request):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+
+    async def event_source():
+        def frame(ev: SSEEvent) -> str:
+            return f"data: {ev.model_dump_json()}\n\n"
+
+        # Terminal rows: replay the outcome and close immediately.
+        if t.status == "completed":
+            yield frame(SSEEvent(step="pipeline", status="completed", message="Your artifact is ready"))
+            return
+        if t.status == "failed":
+            yield frame(SSEEvent(step=t.stage or "pipeline", status="failed", message=t.error_message))
+            return
+
+        # Subscribe before replaying the current stage so no event is lost.
+        queue = hub.subscribe(transform_id)
+        try:
+            if t.stage and t.stage != "queued":
+                yield frame(SSEEvent(step=t.stage, status="processing", message="Resuming..."))
+            while True:
+                if await request.is_disconnected():
+                    return
+                try:
+                    ev = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield frame(ev)
+                if ev.status == "failed" or (ev.step == "pipeline" and ev.status == "completed"):
+                    return
+        finally:
+            hub.unsubscribe(transform_id, queue)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Edit / retry / export / delete ────────────────────────────────────────────
+
+@router.put("/api/transform/{transform_id}/content")
+async def update_content(transform_id: str, body: UpdateContentBody):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+    if t.content is None:
+        return error(409, "content_not_ready", "artifact not generated yet")
+
+    # Kind and stored paths are server-owned — edits can't change them.
+    edited = body.content
+    edited.kind = t.content.kind
+    edited.image_path = t.content.image_path
+
+    await db.update_content(transform_id, edited)
+    t.content = edited
+    return ok(t.model_dump(mode="json"))
+
+
+@router.post("/api/transform/{transform_id}/retry")
+async def retry(transform_id: str, request: Request, body: RetryBody | None = None):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+    if t.status == "processing":
+        return error(409, "still_processing", "transform is already running")
+
+    await db.reset_for_retry(transform_id)
+    request.app.state.runner.start(transform_id, (body.image_prompt if body else "") or "")
+    return ok(
+        {"id": transform_id, "stream_url": f"/api/transform/{transform_id}/stream"},
+        status_code=202,
+    )
+
+
+@router.get("/api/transform/{transform_id}/export")
+async def export(transform_id: str, format: str = "md"):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+    if t.content is None:
+        return error(409, "content_not_ready", "artifact not generated yet")
+
+    lines = []
+    if t.content.title:
+        lines.append(f"# {t.content.title}\n")
+    lines.append(t.content.body_markdown)
+    if t.content.highlights:
+        lines.append("\n## Key Points\n")
+        lines.extend(f"- {h}" for h in t.content.highlights)
+    body = "\n".join(lines)
+
+    if format == "md":
+        return Response(
+            body,
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="artifact.md"'},
+        )
+    if format == "txt":
+        return Response(
+            body,
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="artifact.txt"'},
+        )
+    return error(400, "invalid_format", "format must be md or txt")
+
+
+@router.get("/api/transform/{transform_id}/image")
+async def image(transform_id: str):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+    if t.content is None or not t.content.image_path:
+        return error(404, "image_not_found", "no image for this transform")
+    path = config.DATA_DIR / t.content.image_path
+    if not path.is_file():
+        return error(404, "image_not_found", "image file missing")
+    media_types = {".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg"}
+    return FileResponse(path, media_type=media_types.get(path.suffix.lower(), "application/octet-stream"))
+
+
+@router.delete("/api/transform/{transform_id}")
+async def delete(transform_id: str):
+    t = await db.get_transform(transform_id)
+    if t is None:
+        return error(404, "transform_not_found", "transform not found")
+
+    source_path = await db.get_source_path(transform_id)
+    await db.delete_transform(transform_id)
+
+    # Best-effort file cleanup.
+    for p in (
+        Path(source_path) if source_path else None,
+        (config.DATA_DIR / t.content.image_path) if t.content and t.content.image_path else None,
+    ):
+        if p is not None:
+            try:
+                p.unlink(missing_ok=True)
+            except OSError:
+                pass
+    return ok({"deleted": True})
