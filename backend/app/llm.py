@@ -18,6 +18,16 @@ log = logging.getLogger("llm")
 # stall behind an absurd server hint (the job itself has its own timeout).
 MAX_RETRY_WAIT_SECONDS = 30.0
 
+# Quality-sized completion budgets consume most of a small per-minute token
+# window, so consecutive deliverables in one job routinely need the window to
+# roll over between calls. Waiting out several short server hints is the
+# normal path on constrained tiers, not an edge case — be patient.
+MAX_ATTEMPTS = 6
+
+# Never shrink the completion reservation below this — under it, deliverables
+# get truncated mid-document rather than merely being short.
+MIN_COMPLETION_TOKENS = 1500
+
 
 class GroqError(Exception):
     pass
@@ -58,6 +68,13 @@ def _retry_after_seconds(resp: httpx.Response) -> float:
     return 0.0
 
 
+def _is_request_too_large(resp: httpx.Response) -> bool:
+    """413: prompt + max_tokens reservation exceeds the per-minute token
+    limit. Unlike a 429 this never heals by waiting — the request itself has
+    to get smaller."""
+    return resp.status_code == 413
+
+
 def _is_json_validate_failure(resp: httpx.Response) -> bool:
     """Groq rejects a JSON-mode response it could not validate (typically one
     truncated mid-document) with a 400 and no usable content."""
@@ -84,19 +101,44 @@ class GroqClient:
     async def chat(self, messages: list[dict], json_mode: bool = False) -> str:
         """Call the chat model (vision model when images are attached) and
         return the assistant text."""
+        is_vision = _has_image_parts(messages)
         payload: dict = {
-            "model": self.vision_model if _has_image_parts(messages) else self.chat_model,
+            "model": self.vision_model if is_vision else self.chat_model,
             "messages": messages,
             "temperature": 0.4,
             "max_tokens": config.GROQ_MAX_TOKENS,
-            # Reasoning models spend completion budget on thinking; unbounded,
-            # they can exhaust it before closing the JSON document.
-            "reasoning_effort": config.GROQ_REASONING_EFFORT,
         }
+        # Reasoning models spend completion budget on thinking; unbounded, they
+        # can exhaust it before closing the JSON document. Models disagree on
+        # the accepted vocabulary, though: the vision model rejects anything
+        # but "none"/"default", so send the value that model understands.
+        effort = config.GROQ_REASONING_EFFORT
+        if is_vision:
+            effort = "none" if effort not in ("none", "default") else effort
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
 
-        data = await self._post("/chat/completions", payload)
+        # Thinking and the answer share one completion budget, and a
+        # constrained tier can shrink that budget mid-flight (413 halving).
+        # When the model keeps dying mid-JSON because thinking ate the budget,
+        # resampling at the same effort is futile — step the effort down and
+        # let the deliverable have the tokens instead. Full-budget accounts
+        # never leave the first rung.
+        ladder = {"high": ["high", "medium", "low"], "medium": ["medium", "low"]}.get(effort, [effort])
+        data: dict = {}
+        for i, eff in enumerate(ladder):
+            if eff:
+                payload["reasoning_effort"] = eff
+            try:
+                data = await self._post("/chat/completions", payload)
+                break
+            except GroqError as exc:
+                if "json_validate_failed" not in str(exc) or i == len(ladder) - 1:
+                    raise
+                log.warning(
+                    "[groq] model ran out of budget mid-document at reasoning_effort=%s — "
+                    "retrying at %s", eff, ladder[i + 1],
+                )
         choices = data.get("choices") or []
         if not choices:
             raise GroqError(f"empty response from {payload['model']}")
@@ -115,10 +157,10 @@ class GroqClient:
         return content
 
     async def _post(self, path: str, payload: dict) -> dict:
-        """JSON POST with up to 3 attempts, backing off on 429/5xx — free-tier
-        rate limits are the common failure mode."""
+        """JSON POST with up to MAX_ATTEMPTS attempts, backing off on 429/5xx —
+        per-minute rate limits are the common failure mode."""
         last_error: Exception = GroqError("request not attempted")
-        for attempt in range(1, 4):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
                 resp = await self._client.post(path, json=payload)
                 if resp.status_code == 200:
@@ -126,18 +168,40 @@ class GroqClient:
                 body_preview = resp.text[:300]
                 last_error = GroqError(f"groq {path}: status {resp.status_code}: {body_preview}")
 
+                # 413: the reservation itself is too big for the token
+                # window. Waiting cannot help, but a smaller reservation can —
+                # real deliverables need far less than the default.
+                if _is_request_too_large(resp):
+                    current = payload.get("max_tokens", config.GROQ_MAX_TOKENS)
+                    shrunk = int(current * 0.5)
+                    if attempt < MAX_ATTEMPTS and shrunk >= MIN_COMPLETION_TOKENS:
+                        log.warning(
+                            "[groq] attempt %d/%d: request too large, retrying with max_tokens=%d",
+                            attempt, MAX_ATTEMPTS, shrunk,
+                        )
+                        payload["max_tokens"] = shrunk
+                        continue
+                    raise GroqError(
+                        "request too large for the account's per-minute token limit — "
+                        "the source content plus the reserved response size exceed it. "
+                        "Shorten the source text, select fewer output types, or lower "
+                        "GROQ_MAX_TOKENS"
+                    )
+
                 # json_validate_failed means the model ran out of completion
                 # budget mid-document — the response is discarded server-side,
-                # so no partial content comes back. Worth one more sampling
-                # attempt; if it keeps happening the budget is genuinely tight.
+                # so no partial content comes back. One resample covers bad
+                # luck; beyond that the budget is genuinely too tight for the
+                # current reasoning effort, and the caller's effort ladder is
+                # the fix, not more identical samples.
                 if _is_json_validate_failure(resp):
                     last_error = GroqError(
                         "model did not finish a valid JSON document (Groq json_validate_failed) — "
                         "usually the completion budget ran out mid-response; "
                         "raise GROQ_MAX_TOKENS or lower GROQ_REASONING_EFFORT"
                     )
-                    if attempt < 3:
-                        log.warning("[groq] attempt %d/3: json_validate_failed, resampling", attempt)
+                    if attempt < 2:
+                        log.warning("[groq] attempt %d: json_validate_failed, resampling once", attempt)
                         await asyncio.sleep(1)
                         continue
                     raise last_error
@@ -149,8 +213,8 @@ class GroqClient:
                 # token-per-minute window needs far longer than a short backoff.
                 if resp.status_code == 429:
                     delay = _retry_after_seconds(resp) or attempt * 2
-                    if attempt < 3:
-                        log.warning("[groq] attempt %d/3: rate limited, waiting %.1fs", attempt, delay)
+                    if attempt < MAX_ATTEMPTS:
+                        log.warning("[groq] attempt %d/%d: rate limited, waiting %.1fs", attempt, MAX_ATTEMPTS, delay)
                         await asyncio.sleep(delay)
                         continue
                     raise last_error
@@ -158,8 +222,8 @@ class GroqClient:
                 raise
             except httpx.HTTPError as exc:
                 last_error = exc
-            if attempt < 3:
-                log.warning("[groq] attempt %d/3 failed: %s", attempt, last_error)
+            if attempt < MAX_ATTEMPTS:
+                log.warning("[groq] attempt %d/%d failed: %s", attempt, MAX_ATTEMPTS, last_error)
                 await asyncio.sleep(attempt * 2)
         raise GroqError(str(last_error))
 

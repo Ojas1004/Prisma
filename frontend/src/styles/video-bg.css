@@ -1,0 +1,41 @@
+/* ============================================================
+   Shared full-viewport video background.
+   Owned by components/VideoBackground.tsx and imported BY it, so
+   every route gets identical treatment from one source.
+
+   position: fixed (not absolute) is load-bearing: the console is a
+   scrolling page, and an absolutely-positioned layer would only
+   cover its parent's first viewport and scroll away underneath the
+   later cards.
+   ============================================================ */
+
+.bg {
+  position: fixed;
+  inset: 0;
+  background: #000000;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.bg-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Guarantees text contrast whatever frame is behind it — the video's
+   luminance varies, so 4.5:1 cannot be assumed without this. */
+.bg-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(120% 80% at 50% 45%, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.6) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.12) 34%, rgba(0, 0, 0, 0.55) 100%);
+}

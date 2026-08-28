@@ -92,6 +92,13 @@ class Runner:
             await self._fail(transform_id, "reading_source", str(exc))
             return
 
+        if resolved.truncated_from:
+            await progress(
+                "reading_source",
+                f"Source trimmed to fit the model budget "
+                f"({len(resolved.text):,} of {resolved.truncated_from:,} characters used)",
+            )
+
         # ── Generate each selected type ───────────────────────────────────
         for i, ot in enumerate(to_run, 1):
             generator = self.registry[ot]

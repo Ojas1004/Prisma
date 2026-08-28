@@ -1,0 +1,337 @@
+/* ============================================================
+   Site header — logo, nav pill, sign-in, mobile sheet menu.
+   Owned by components/SiteHeader.tsx and imported BY it, so the
+   chrome is styled identically on every route that renders it.
+   Never rely on a page stylesheet to style this markup.
+   ============================================================ */
+
+/* Tokens live on the elements that use them, so the header never depends
+   on a wrapper class being present. Values alias the shared palette in
+   theme.css; the literals are fallbacks only, for the case where this
+   stylesheet somehow loads without it. */
+.header,
+.menu,
+.overlay {
+  --hdr-text: var(--ink-2, #b9b9c6);
+  --hdr-text-active: var(--ink, #f4f4f6);
+  --hdr-surface: var(--surface-1, #0d0d18);
+  --hdr-surface-2: var(--surface-3, #1b1b28);
+  --hdr-line: var(--line, #322d36);
+  --hdr-accent: var(--accent, #8200db);
+  --hdr-sign-in: var(--ink-2, #b9b9c6);
+  --hdr-shadow: var(--shadow, 0 8px 28px rgba(0, 0, 0, 0.55));
+  --hdr-font: var(--font-sans, "Inter", "Segoe UI", system-ui, sans-serif);
+}
+
+.header {
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(18px, 2.8vw, 28px);
+  font-family: var(--hdr-font);
+}
+
+.header a {
+  text-decoration: none;
+}
+
+.header ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.logo {
+  flex-shrink: 0;
+  width: clamp(40px, 4.4vw, 46px);
+  height: clamp(40px, 4.4vw, 46px);
+  border-radius: 50%;
+  background: var(--hdr-surface);
+  border: 1px solid var(--hdr-line);
+  box-shadow: var(--hdr-shadow);
+  display: grid;
+  place-items: center;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The mark is a placeholder white disc (see DESIGN_PHILOSOPHY §8). Inverting
+   it lets it read as a light glyph on the dark chrome instead of a bright
+   white hole; drop the filter once a real mark ships. */
+.logo img {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+  border-radius: 50%;
+  filter: invert(1) brightness(1.9);
+}
+
+.logo:hover {
+  transform: scale(1.04);
+}
+
+.nav {
+  flex: 1;
+  max-width: 430px;
+  height: clamp(44px, 5.2vw, 48px);
+  background: rgba(13, 13, 24, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hdr-line);
+  border-radius: 999px;
+  box-shadow: var(--hdr-shadow);
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+}
+
+.nav-list {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  width: 100%;
+}
+
+/* Explicit colour — never inherited, so no page background or ambient
+   rule can render this dark-on-dark. Light ink, because the pill is now a
+   dark glass surface rather than solid white. */
+.header .nav .nav-link {
+  position: relative;
+  display: inline-block;
+  padding: 6px 10px 8px;
+  color: var(--hdr-text-active);
+  font-family: var(--hdr-font);
+  font-weight: 500;
+  font-size: clamp(13px, 1.4vw, 15px);
+  letter-spacing: -0.01em;
+  opacity: 0.5;
+  transition: opacity 0.22s ease;
+}
+
+.header .nav .nav-link:hover {
+  opacity: 0.75;
+}
+
+.header .nav .nav-link.is-active {
+  opacity: 1;
+}
+
+/* Three 3x3 dots under the active label. */
+.header .nav .nav-link.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  background: var(--hdr-accent);
+  box-shadow: -5px 0 0 var(--hdr-accent), 5px 0 0 var(--hdr-accent);
+}
+
+/* A real <button>, not a link — there is no auth route to point at yet, so
+   it must not be navigable. Button UA styles are reset explicitly. */
+.header .sign-in {
+  flex-shrink: 0;
+  height: clamp(44px, 5.2vw, 48px);
+  display: inline-flex;
+  align-items: center;
+  padding: 0 clamp(16px, 2vw, 22px);
+  border: 0;
+  background: var(--hdr-surface-2);
+  border: 1px solid var(--hdr-line);
+  color: var(--hdr-sign-in);
+  border-radius: 999px;
+  box-shadow: var(--hdr-shadow);
+  font-family: var(--hdr-font);
+  font-weight: 500;
+  font-size: clamp(13px, 1.4vw, 15px);
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 0.25s ease, color 0.25s ease, transform 0.25s ease;
+}
+
+.header .sign-in:hover:not(:disabled) {
+  background: var(--hdr-accent);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+/* Placeholder state: still reads as complete chrome, but visibly inert. */
+.header .sign-in:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.burger {
+  display: none;
+}
+
+/* Selection on the dark chrome uses the accent so it stays legible. */
+.nav ::selection,
+.menu ::selection {
+  background: var(--hdr-accent);
+  color: #ffffff;
+}
+
+/* ── Mobile menu ──────────────────────────────────────────── */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.menu {
+  position: fixed;
+  z-index: 50;
+  top: calc(clamp(16px, 2.4vh, 28px) + 48px + 14px);
+  left: clamp(14px, 3vw, 32px);
+  right: clamp(14px, 3vw, 32px);
+  background: rgba(13, 13, 24, 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--hdr-line);
+  border-radius: 28px;
+  padding: 22px 18px 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  font-family: var(--hdr-font);
+}
+
+.menu-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.menu .menu-link,
+.menu .menu-signin {
+  position: relative;
+  display: block;
+  padding: 12px 16px;
+  color: var(--hdr-text-active);
+  text-decoration: none;
+  font-family: var(--hdr-font);
+  font-weight: 500;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  opacity: 0.65;
+}
+
+.menu .menu-link.is-active {
+  opacity: 1;
+}
+
+.menu .menu-link.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin-left: -1.5px;
+  background: var(--hdr-accent);
+  box-shadow: -5px 0 0 var(--hdr-accent), 5px 0 0 var(--hdr-accent);
+}
+
+.menu .menu-signin {
+  margin-top: 12px;
+  width: 100%;
+  border: 0;
+  cursor: not-allowed;
+  text-align: center;
+  background: var(--hdr-surface-2);
+  color: var(--hdr-sign-in);
+  border-radius: 999px;
+  opacity: 1;
+  font-weight: 600;
+}
+
+body.menu-open {
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .header {
+    justify-content: space-between;
+    max-width: 100%;
+  }
+
+  .nav,
+  .sign-in {
+    display: none;
+  }
+
+  .logo {
+    width: 48px;
+    height: 48px;
+  }
+
+  .header .burger {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--hdr-surface-2);
+    border: 1px solid var(--hdr-line);
+    box-shadow: var(--hdr-shadow);
+    cursor: pointer;
+    transition: background 0.28s ease;
+  }
+
+  .burger-bars {
+    display: grid;
+    gap: 5px;
+  }
+
+  .burger-bars span {
+    display: block;
+    width: 18px;
+    height: 1.5px;
+    background: #ffffff;
+    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease,
+      background 0.28s ease;
+  }
+
+  .burger[aria-expanded="true"] {
+    background: var(--hdr-accent);
+  }
+
+  .burger[aria-expanded="true"] .burger-bars span {
+    background: #ffffff;
+  }
+
+  .burger[aria-expanded="true"] .burger-bars span:nth-child(1) {
+    transform: translateY(6.5px) rotate(45deg);
+  }
+
+  .burger[aria-expanded="true"] .burger-bars span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .burger[aria-expanded="true"] .burger-bars span:nth-child(3) {
+    transform: translateY(-6.5px) rotate(-45deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header *,
+  .menu *,
+  .overlay {
+    transition: none !important;
+    animation: none !important;
+  }
+}

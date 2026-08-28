@@ -29,11 +29,28 @@ GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
 # Headroom for one deliverable. The default chat model is a *reasoning* model:
 # its thinking tokens spend the same completion budget as the answer, and in
 # JSON mode a response truncated mid-document is rejected server-side as
-# json_validate_failed (no partial content returned). Both knobs below keep
-# generation inside the budget; raise MAX_TOKENS for very long deliverables.
+# json_validate_failed (no partial content returned). A tight budget therefore
+# starves the deliverable twice — less thinking AND less room to finish — which
+# shows up as thin, corner-cutting output. 8000 gives high-effort reasoning
+# plus a fully developed deliverable comfortable room.
+#
+# Groq counts prompt + this reservation against the account's per-minute token
+# limit; when that makes a request too large the API rejects it with 413 and
+# the client halves the reservation and retries (see llm._post), so
+# constrained tiers degrade to a smaller budget instead of failing.
 GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "8000"))
-# low | medium | high — "low" leaves the budget for the deliverable itself.
-GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low")
+
+# Ceiling on how much SOURCE material goes into one prompt, in characters
+# (~4 chars/token). The free tier's per-minute window covers prompt +
+# response together, so a long document (a research paper runs 40k+ chars)
+# cannot fit and would be rejected outright with 413. Longer sources are
+# truncated to this budget with a visible marker rather than failing.
+MAX_SOURCE_CHARS = int(os.getenv("MAX_SOURCE_CHARS", "14000"))
+# low | medium | high. This is a considered content-generation tool, not live
+# chat: planning before writing is what keeps a deliverable cohesive instead
+# of a rough draft, so spend reasoning freely — GROQ_MAX_TOKENS is sized to
+# fit thinking plus the full deliverable.
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "high")
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 

@@ -1,0 +1,54 @@
+/* ============================================================
+   Tailwind entry + theme bridge.
+
+   The vendored shadcn component references shadcn's token names
+   (bg-card, border-border, text-foreground, bg-primary, bg-accent,
+   text-muted-foreground, ring-ring). Rather than importing shadcn's
+   default palette, those names are mapped onto OUR system — now the
+   dark palette in theme.css:
+
+     card / popover  -> raised dark surface
+     border / input  -> the subtle light-on-dark hairline
+     primary         -> the violet accent w/ white text
+     muted-foreground-> our secondary ink
+     accent          -> the hover wash inside dark cards
+
+   Every value below resolves to a custom property from theme.css, so
+   the composer re-skins with the rest of the product rather than
+   pinning the old white-card scheme in place.
+   ============================================================ */
+
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--surface-0);
+  --color-foreground: var(--ink);
+
+  --color-card: var(--surface-1);
+  --color-card-foreground: var(--ink);
+
+  --color-popover: var(--surface-3);
+  --color-popover-foreground: var(--ink);
+
+  /* Primary action: the landing hero's violet fill with white text. */
+  --color-primary: var(--accent);
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--ink);
+
+  /* Field fill + hover wash inside dark cards */
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--ink-3);
+  --color-accent: var(--surface-3);
+  --color-accent-foreground: var(--ink);
+
+  --color-border: var(--line);
+  --color-input: var(--line);
+  --color-ring: var(--accent-bright);
+
+  --color-destructive: #f2555a;
+  --color-destructive-foreground: #ffffff;
+
+  --font-sans: var(--font-sans);
+}

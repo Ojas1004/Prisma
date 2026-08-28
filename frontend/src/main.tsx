@@ -1,8 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource/jetbrains-mono/400.css";
-import "@fontsource/jetbrains-mono/700.css";
-import "./styles/terminal.css";
+// Palette first: component stylesheets and the Tailwind theme both consume
+// these custom properties.
+import "./styles/theme.css";
+import "./styles/tailwind.css";
 import App from "./App";
 
 createRoot(document.getElementById("root")!).render(

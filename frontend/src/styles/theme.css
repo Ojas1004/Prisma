@@ -1,0 +1,56 @@
+/* ============================================================
+   Shared palette — the single source of truth for the product's
+   visual language.
+
+   These values are lifted from the landing-page redesign, where they
+   previously existed only as literals inside the hero component
+   (#8200DB violet, #0D0D18 base, #322D36 borders). Promoting them to
+   custom properties on :root is what lets the console consume the
+   same palette, so a future tweak here updates every surface instead
+   of drifting into two systems again.
+
+   Imported once by main.tsx, ahead of every component stylesheet.
+   ============================================================ */
+
+:root {
+  /* ── Base ─────────────────────────────────────────────────
+     Near-black with a blue-violet cast, not pure #000 — the same
+     base the hero's navbar sits on. */
+  --surface-0: #08080f; /* page base */
+  --surface-1: #0d0d18; /* raised: panels, cards */
+  --surface-2: #14141f; /* raised further: fields, hover wash */
+  --surface-3: #1b1b28; /* highest: popovers, active rows */
+
+  /* ── Accent ───────────────────────────────────────────────
+     The hero's violet. `-soft` is the 16%-alpha fill used on its
+     primary buttons; `-glow` tints ambient backgrounds. */
+  --accent: #8200db;
+  --accent-bright: #a855f7;
+  --accent-soft: rgba(130, 0, 219, 0.16);
+  --accent-glow: rgba(130, 0, 219, 0.13);
+
+  /* ── Lines ────────────────────────────────────────────────
+     #322D36 is the hero's button border; the translucent variants
+     read correctly over any of the surface tones. */
+  --line: #322d36;
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  /* ── Text ─────────────────────────────────────────────────
+     Measured against --surface-1: primary ~16:1, secondary ~7.5:1,
+     muted ~4.8:1 — all clear AA at their sizes. */
+  --ink: #f4f4f6;
+  --ink-2: #b9b9c6;
+  --ink-3: #8a8a9a;
+
+  /* ── Elevation ────────────────────────────────────────────
+     One shadow across the product, as before — retuned for dark
+     surfaces, where a black shadow needs more depth to register. */
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+
+  /* ── Type ─────────────────────────────────────────────────
+     Inter only. The dot-matrix display face is deliberately absent:
+     it belonged to the retired TERMINAL-era system, and the new
+     landing page sets its headline in bold Inter. */
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+}

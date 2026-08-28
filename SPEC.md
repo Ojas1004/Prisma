@@ -112,7 +112,7 @@ spec-required behavior.
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Frontend | **React 19 + Vite 6** (TypeScript, strict) | SPA, no router, no styling/animation libraries. **"Terminal CLI" design system** (owner-approved once the pipeline was proven live): dark-only phosphor-green hacker/CRT aesthetic — tokens, global element skin, and effects (blink/glitch/scanlines/typewriter) all hand-rolled in `src/styles/terminal.css`; JetBrains Mono bundled via `@fontsource/jetbrains-mono` (the only styling-adjacent dep, chosen so the demo renders offline). Brand name **"TERMINAL" is a placeholder** until the project name is finalized |
+| Frontend | **React 19 + Vite 6** (TypeScript, strict) | SPA with **React Router 7** (path-based: `/`, `/transform`). **"Terminal CLI" design system** (owner-approved once the pipeline was proven live): dark-only phosphor-green hacker/CRT aesthetic — tokens, global element skin, and effects (blink/glitch/scanlines/typewriter) all hand-rolled in `src/styles/terminal.css`; JetBrains Mono bundled via `@fontsource/jetbrains-mono` (the only styling-adjacent dep, chosen so the demo renders offline). Brand name **"TERMINAL" is a placeholder** until the project name is finalized |
 | Backend | **Python 3.13 + FastAPI** (uvicorn, async throughout) | |
 | Database | **PostgreSQL 16** | host port **5434**; plain SQL migration auto-applied on container init; raw SQL via `asyncpg`, no ORM. Run via podman on this machine — see "Running locally" below |
 | LLM (core) | **Groq API** — `https://api.groq.com/openai/v1`, OpenAI-compatible | Env: `GROQ_API_KEY` (required), `GROQ_CHAT_MODEL` (default `openai/gpt-oss-120b`), `GROQ_VISION_MODEL` (default `qwen/qwen3.6-27b`, used automatically when a message carries image parts), `GROQ_BASE_URL`, plus the two budget knobs below. Model catalog moves fast — the original `llama-3.3-70b-versatile` / `llama-4-scout` defaults were retired by Aug 2026; verify against `GET /openai/v1/models` (or console.groq.com/docs/models) if generation 404s with `model_not_found` |
@@ -139,7 +139,13 @@ perfectly valid JSON (escapes, emoji, em dashes, hashtags all intact) with
 `response_format` removed, and Groq's own message read *"max completion tokens
 reached before generating a valid document"*.
 
-- `GROQ_MAX_TOKENS` (default **8000**) — explicit per-deliverable ceiling.
+- `GROQ_MAX_TOKENS` (default **4000**) — explicit per-deliverable ceiling.
+  Groq counts **prompt + this reservation** against the per-minute token limit,
+  so an oversized value gets the whole request rejected with **413 "Request
+  too large"** before anything is generated (observed live: an ~700-token
+  prompt + 8000 reservation = 8,724 > the 8,000 TPM cap). Real deliverables
+  use ~500-1,500 completion tokens, so 4000 is generous. `llm.py` halves the
+  reservation and retries on a 413, with a floor of 1,500.
 - `GROQ_REASONING_EFFORT` (default **`low`**) — keeps the budget for the
   deliverable rather than the model's reasoning. At default effort the same
   prompt failed repeatedly; at `low` it completed in ~413 tokens.
@@ -150,8 +156,21 @@ valid JSON — check the budget first. `llm.py` translates this error into an
 actionable message and resamples once; a `finish_reason=length` response is
 also raised rather than silently returned truncated.
 
-**Free-tier rate limits are 8,000 tokens/minute** — a 7-type job routinely
-trips them. `llm.py` obeys Groq's own `Retry-After` / *"try again in 18.33s"*
+**Long sources must be truncated, not just budgeted.** `sources.py` caps
+source material at `MAX_SOURCE_CHARS` (default **14000**, ~3,500 tokens),
+cutting at a paragraph break and appending a visible `[SOURCE TRUNCATED — …]`
+marker; the runner publishes an SSE line saying how much was used. Verified
+live: "Attention Is All You Need" extracts to **32,623 chars (~8,155 tokens)**
+— larger than the entire per-minute window on its own, so no reservation
+tuning could have made it fit. Free-form `prompt` sources are never truncated
+(the brief *is* the task). A 3-type job on that paper returned 2/3, the third
+lost to rate-limit exhaustion — expected free-tier behaviour, handled by the
+per-type failure path.
+
+**Free-tier rate limits are 8,000 tokens/minute** — this manifests two ways: a
+**429** when successive calls exhaust the window (transient, healed by waiting)
+and a **413** when a single request is larger than the window (permanent, only
+fixed by shrinking the request). A 7-type job routinely trips the former. `llm.py` obeys Groq's own `Retry-After` / *"try again in 18.33s"*
 hint (capped at 30 s) instead of a fixed short backoff; verified engaging 4×
 during a successful 7/7 run.
 
@@ -225,7 +244,7 @@ SIH/
     ├── index.html                   title TERMINAL, dark color-scheme, bg pre-paint
     └── src/
         ├── main.tsx                 React root; imports fonts + terminal.css
-        ├── App.tsx                  state-based view switch home ⇄ transform (no router)
+        ├── App.tsx                  React Router routes (/ , /transform), per-route titles, hash scrolling
         ├── styles/terminal.css      Terminal CLI design tokens + global element skin
         │                            + effects (blink, glitch, scanlines, panes, buttons)
         ├── components/Typewriter.tsx  char-by-char hero reveal + blinking █ cursor,
@@ -469,8 +488,11 @@ pypdf, `image` attached as a data-URI part (Groq vision model auto-selected).
 7. **Frontend design:** the original "stays plain until the pipeline is
    proven" constraint was satisfied and lifted by the owner after the first
    live end-to-end run — the **Terminal CLI design system** (§3) is now the
-   product's visual identity. Still binding: **no router** (state-based view
-   switch), **no styling/animation libraries** (the design system is
+   product's visual identity. The **no-router constraint was lifted by the
+   owner** (29 Aug 2026): the app now uses React Router with real, shareable
+   paths — `/` and `/transform` — plus hash anchors for the landing sections,
+   because state-switching left the URL bar, back/forward, and deep links
+   broken. Still binding: **no styling/animation libraries** (the design system is
    hand-rolled CSS; `@fontsource/jetbrains-mono` font files are the only
    addition), and "TERMINAL" is a placeholder brand name.
 8. **prompts.json is the registry.** New deliverable types and parameters are

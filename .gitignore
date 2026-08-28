@@ -1,8 +1,30 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
+
+# Secrets
 .env
+
+# Node / build output
 node_modules/
 dist/
 build/
 *.log
+*.tsbuildinfo
+
+# Runtime data (uploads + generated artifacts)
+backend/data/
+
+# Personal build log — not project documentation
+PROGRESSION.md
+
+# Agent skills — installed per-machine via `npx skills add`
+.agents/
+skills-lock.json
+.claude
+#MD files
+DESIGN_PHILOSOPHY.md
+EXPLAIN.md
+SPEC.md
+explanation simplified.md
