@@ -5,7 +5,8 @@ __pycache__/
 
 # Secrets
 .env
-
+#MCP
+.mcp.json
 # Node / build output
 node_modules/
 dist/
