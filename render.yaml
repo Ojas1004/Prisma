@@ -1,0 +1,41 @@
+# Render deploy for the FastAPI backend.
+#
+# Vercel hosts the frontend (frontend/vercel.json); Render hosts this because
+# the API needs a persistent process: the SSE hub (app/sse.py) is an in-process
+# asyncio queue, and the runner (app/runner.py) fires background tasks that
+# outlive the HTTP response by up to JOB_TIMEOUT_SECONDS. Serverless would cut
+# both off. Postgres and auth both live in Supabase, so no database is declared
+# here — DATABASE_URL points at Supabase's session pooler.
+services:
+  - type: web
+    name: sih-transform-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Render supplies $PORT; binding 0.0.0.0 is required for its health checks.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/output-types
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      # Secrets — set these in the Render dashboard, never in this file.
+      - key: GROQ_API_KEY
+        sync: false
+      # Supabase SESSION POOLER URI, not the direct connection. The direct
+      # host (db.<ref>.supabase.co) is IPv6-only and Render's free tier has no
+      # IPv6 egress, so it fails with "[Errno 101] Network is unreachable".
+      # Copy the string from Supabase (Connect -> Direct -> Session pooler)
+      # rather than assembling it: the username is postgres.<project-ref> and
+      # the region prefix (aws-0 here) is part of the hostname. Port 5432 on
+      # the pooler host is session mode; 6543 is transaction mode, which breaks
+      # asyncpg's prepared statements.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Lock CORS to the deployed frontend once its URL is known.
+      - key: CORS_ORIGINS
+        sync: false

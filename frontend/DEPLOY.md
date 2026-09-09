@@ -4,16 +4,16 @@ The app uses **path-based routing** (`/`, `/transform`). Any host serving the
 production build must rewrite unknown paths to `index.html`, or a hard refresh
 on `/transform` returns 404 while in-app navigation still works.
 
-**The hosting target is not yet decided** (see PROGRESSION.md — deployment is
-not started, and Vercel cannot host the FastAPI backend as-is because SSE
-streams and asyncio jobs outlive a serverless request). Configs for the likely
-static hosts are committed so whichever is chosen works without a rediscovery:
+**Vercel is the deployed target** — see `../DEPLOYMENT.md` for the full setup.
+Only the frontend goes there; the FastAPI backend runs on Render, because SSE
+streams and asyncio jobs outlive a serverless request. Configs for the other
+static hosts stay committed so a switch needs no rediscovery:
 
 | Host | File | Status |
 |---|---|---|
+| Vercel | `vercel.json` | **active — deployed** |
 | Vite dev server | built in (`appType: "spa"`) | active — verified |
 | Netlify | `public/_redirects` | committed, unverified |
-| Vercel | `vercel.json` | committed, unverified |
 | nginx | snippet below | not committed |
 | GitHub Pages | needs hash routing or a 404.html copy | **not supported as-is** |
 

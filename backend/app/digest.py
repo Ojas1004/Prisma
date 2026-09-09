@@ -18,6 +18,7 @@ import logging
 
 from app import llm
 from app.chunking import (
+    MAP_COMPLETION_TOKENS,
     REDUCE_INPUT_TOKENS,
     SUMMARY_TOKEN_CAP,
     Chunk,
@@ -67,8 +68,15 @@ async def map_chunk(client: llm.GroqClient, chunk: Chunk, total: int) -> ChunkSu
     )
     # reasoning_effort="low" reuses the existing control in llm.chat — the map
     # step is extraction, not composition, and a low-effort call leaves the
-    # per-minute window for the deliverable generation that follows.
-    result = await client.chat([llm.text_message("user", prompt)], reasoning_effort="low")
+    # per-minute window for the deliverable generation that follows. The
+    # completion reservation is cut for the same reason: _enforce_cap discards
+    # anything past SUMMARY_TOKEN_CAP anyway, and Groq charges the full
+    # reservation against the per-minute window whether it is used or not.
+    result = await client.chat(
+        [llm.text_message("user", prompt)],
+        reasoning_effort="low",
+        max_tokens=MAP_COMPLETION_TOKENS,
+    )
     return ChunkSummary(index=chunk.index, text=_enforce_cap(result.text.strip(), chunk.index))
 
 

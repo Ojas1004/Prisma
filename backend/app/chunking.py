@@ -75,6 +75,16 @@ OVERLAP_CHARS = int(CHUNK_CHARS * OVERLAP_RATIO)  # 960
 # An indivisible unit larger than this cannot be mapped at all.
 MAP_CHUNK_CEILING_TOKENS = 5_500
 
+# Map-step completion reservation. The map step's output is capped at
+# SUMMARY_TOKEN_CAP by digest._enforce_cap, so the deliverable-sized default
+# (GROQ_MAX_TOKENS) reserves ~45x what actually survives. Groq counts the whole
+# reservation against TPM_LIMIT, so one map call alone exhausted the window and
+# every following call was rate-limited into a backoff. 1500 leaves generous
+# room for the cap plus low-effort thinking while letting several map calls
+# share one window; it matches llm.MIN_COMPLETION_TOKENS, the floor the 413
+# halving path already refuses to go below.
+MAP_COMPLETION_TOKENS = 1_500
+
 # Reduce-step limits.
 SUMMARY_TOKEN_CAP = 175
 MAX_CHUNKS = 14

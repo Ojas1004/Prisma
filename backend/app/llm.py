@@ -122,20 +122,29 @@ class GroqClient:
         )
 
     async def chat(
-        self, messages: list[dict], json_mode: bool = False, reasoning_effort: str = ""
+        self,
+        messages: list[dict],
+        json_mode: bool = False,
+        reasoning_effort: str = "",
+        max_tokens: int = 0,
     ) -> ChatResult:
         """Call the chat model (vision model when images are attached) and
         return the assistant text.
 
         `reasoning_effort` overrides the configured default for this one call.
         Groq documents low|medium|high for gpt-oss-120b; the vision model only
-        accepts none|default, which is handled below."""
+        accepts none|default, which is handled below.
+
+        `max_tokens` overrides the completion reservation for this one call.
+        The default is sized for a full deliverable; a caller whose output is
+        short and hard-capped downstream (the digest map step) reserves far
+        less, so more of its calls fit the account's per-minute token window."""
         is_vision = _has_image_parts(messages)
         payload: dict = {
             "model": self.vision_model if is_vision else self.chat_model,
             "messages": messages,
             "temperature": 0.4,
-            "max_tokens": config.GROQ_MAX_TOKENS,
+            "max_tokens": max_tokens or config.GROQ_MAX_TOKENS,
         }
         # Reasoning models spend completion budget on thinking; unbounded, they
         # can exhaust it before closing the JSON document. Models disagree on
@@ -190,7 +199,7 @@ class GroqClient:
         content = choices[0].get("message", {}).get("content", "")
         if finish_reason == "length":
             raise GroqError(
-                f"response hit the {config.GROQ_MAX_TOKENS}-token limit before finishing — "
+                f"response hit the {payload['max_tokens']}-token limit before finishing — "
                 "raise GROQ_MAX_TOKENS or request a shorter deliverable"
             )
         if not content:
