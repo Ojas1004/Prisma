@@ -1,0 +1,73 @@
+.account-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.account-menu--mobile {
+  width: 100%;
+}
+
+/* Reuse .sign-in's pill chrome but keep it enabled and cap the width so a
+   long email doesn't blow out the header. */
+.account-trigger {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu--mobile .account-trigger {
+  max-width: none;
+  width: 100%;
+  justify-content: center;
+}
+
+.account-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+
+.account-menu--mobile .account-pop {
+  position: static;
+  margin-top: 8px;
+}
+
+.account-pop-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13.4px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.account-pop-item:hover {
+  background: var(--surface-3);
+}
+
+.account-pop-item--danger {
+  color: #ff9a9d;
+}
+
+.account-pop-item--danger:hover {
+  background: rgba(242, 85, 90, 0.14);
+}

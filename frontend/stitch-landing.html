@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;background-color:#131319;background-image:radial-gradient(rgba(255,255,255,0.08) 1px,transparent 0);background-size:24px 24px;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}
+/* Custom Ambient Animations & Micro-Interactions */
+@keyframes hudScan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  15% { opacity: 0.7; }
+  85% { opacity: 0.7; }
+  100% { transform: translateY(600px); opacity: 0; }
+}
+@keyframes bracketPulse {
+  0%, 100% { opacity: 0.8; filter: drop-shadow(0 0 2px rgba(34,211,238,0.3)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 6px rgba(34,211,238,0.8)); }
+}
+@keyframes pingRadar {
+  0% { transform: scale(1); opacity: 0.9; }
+  80% { transform: scale(2.6); opacity: 0; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+
+.hud-sweep-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(34,211,238,0.2), #22d3ee, rgba(34,211,238,0.2), transparent);
+  box-shadow: 0 0 12px #22d3ee;
+  animation: hudScan 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.hud-bracket {
+  animation: bracketPulse 3.5s ease-in-out infinite;
+  transition: all 0.3s ease;
+}
+
+.radar-ping {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-color: #22d3ee;
+  animation: pingRadar 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+/* Card hover lift & glow */
+.interactive-card {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease, background-color 0.2s ease;
+}
+.interactive-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.7), 0 0 18px rgba(34, 211, 238, 0.18);
+}
+
+/* Studio card active state */
+.studio-card.active {
+  background-color: #1f1f25;
+  box-shadow: 0 0 20px rgba(34, 211, 238, 0.22), inset 0 0 0 1px #22d3ee;
+}
+.studio-card.active .card-status-dot {
+  background-color: #22d3ee;
+  box-shadow: 0 0 8px #22d3ee;
+}
+
+/* Tactile button active push */
+.interactive-cta {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.interactive-cta:active {
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-sweep-line, .radar-ping, .hud-bracket {
+    animation: none !important;
+  }
+  .interactive-card:hover {
+    transform: none !important;
+  }
+}
+</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"surface-container-high":"#2a2930","inverse-surface":"#e4e1ea","on-secondary":"#2d303c","secondary-container":"#434653","secondary-fixed-dim":"#c4c6d5","surface-dim":"#131319","error-container":"#93000a","tertiary-fixed":"#e1e1f0","on-tertiary-fixed":"#191b25","on-secondary-fixed":"#181b26","on-surface":"#e4e1ea","primary-fixed":"#a2eeff","on-tertiary-fixed-variant":"#444652","outline":"#859397","surface-variant":"#35343b","surface-tint":"#2fd9f4","on-secondary-fixed-variant":"#434653","inverse-primary":"#006877","on-error-container":"#ffdad6","on-primary-fixed":"#001f25","secondary-fixed":"#e0e1f1","on-primary-container":"#005763","surface-container-highest":"#35343b","surface-container":"#1f1f25","surface-container-low":"#1b1b21","on-error":"#690005","error":"#ffb4ab","outline-variant":"#3c494c","on-tertiary":"#2e303b","inverse-on-surface":"#303037","on-background":"#e4e1ea","surface":"#131319","on-tertiary-container":"#4d4e5a","on-primary":"#00363e","tertiary-fixed-dim":"#c5c5d3","primary-fixed-dim":"#2fd9f4","tertiary":"#dcdcea","secondary":"#c4c6d5","background":"#131319","on-surface-variant":"#bbc9cd","surface-bright":"#393840","on-primary-fixed-variant":"#004e5a","primary-container":"#22d3ee","surface-container-lowest":"#0e0e14","tertiary-container":"#bfc0ce","primary":"#8aebff","on-secondary-container":"#b2b4c3"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"unit-16":"4rem","unit-2":"0.5rem","gutter-mobile":"1rem","unit-24":"6rem","unit-3":"0.75rem","unit-8":"2rem","unit-6":"1.5rem","unit-12":"3rem","unit-1":"0.25rem","unit-4":"1rem","matrix-size":"24px","gutter-desktop":"1.5rem","container-max":"1440px"},"fontFamily":{"headline-md":["Space Grotesk"],"headline-lg":["Space Grotesk"],"label-md":["JetBrains Mono"],"eyebrow-code":["JetBrains Mono"],"display-xl":["Space Grotesk"],"body-sm":["JetBrains Mono"],"body-md":["JetBrains Mono"],"display-xl-mobile":["Space Grotesk"],"headline-lg-mobile":["Space Grotesk"],"headline-sm":["Space Grotesk"],"body-lg":["JetBrains Mono"],"label-sm":["JetBrains Mono"]},"fontSize":{"headline-md":["24px",{"lineHeight":"32px","letterSpacing":"-0.01em","fontWeight":"600"}],"headline-lg":["38px",{"lineHeight":"46px","letterSpacing":"-0.02em","fontWeight":"600"}],"label-md":["12px",{"lineHeight":"16px","letterSpacing":"0.04em","fontWeight":"500"}],"eyebrow-code":["11px",{"lineHeight":"14px","letterSpacing":"0.12em","fontWeight":"600"}],"display-xl":["56px",{"lineHeight":"64px","letterSpacing":"-0.03em","fontWeight":"700"}],"body-sm":["11px",{"lineHeight":"16px","letterSpacing":"0.02em","fontWeight":"400"}],"body-md":["13px",{"lineHeight":"20px","letterSpacing":"0","fontWeight":"400"}],"display-xl-mobile":["36px",{"lineHeight":"44px","letterSpacing":"-0.02em","fontWeight":"700"}],"headline-lg-mobile":["28px",{"lineHeight":"36px","letterSpacing":"-0.01em","fontWeight":"600"}],"headline-sm":["18px",{"lineHeight":"26px","letterSpacing":"0","fontWeight":"500"}],"body-lg":["15px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"400"}],"label-sm":["10px",{"lineHeight":"14px","letterSpacing":"0.08em","fontWeight":"600"}]}}}}</script></head><body class="bg-background font-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 w-full z-50 bg-surface-container-lowest/90 backdrop-blur-md transition-all duration-300"><div class="h-20 max-w-[1440px] mx-auto px-unit-6 flex items-center justify-between gap-unit-4"><div class="flex items-center gap-unit-3 cursor-pointer group"><div class="w-9 h-9 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-[0_0_8px_rgba(34,211,238,0.35)] group-hover:shadow-[0_0_14px_rgba(34,211,238,0.7)] transition-all"><span class="material-symbols-outlined text-primary-container text-[20px] transition-transform duration-300 group-hover:rotate-45">filter_center_focus</span></div><div class="flex flex-col"><span class="font-label-md text-label-md tracking-wider text-on-surface uppercase group-hover:text-primary transition-colors">Transform Console</span><div class="flex items-center gap-unit-1"><div class="relative flex items-center justify-center w-2 h-2"><span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span><span class="radar-ping"></span></div><span class="font-eyebrow-code text-eyebrow-code text-primary tracking-widest">v3.4.8 // LIVE</span></div></div></div><nav class="hidden md:flex items-center gap-unit-2 bg-surface-container-low px-unit-3 py-unit-1 rounded-full shadow-[0_1px_8px_rgba(0,0,0,0.4)]" data-active-classes="bg-surface-container-high text-primary font-bold shadow-[inset_0_0_0_1px_rgba(34,211,238,0.5)]"><a aria-current="page" class="px-unit-3 py-unit-1 rounded-full transition-all bg-surface-container-high text-primary font-bold shadow-[inset_0_0_0_1px_rgba(34,211,238,0.5)]" data-path="home" href="#">Home</a><a class="px-unit-3 py-unit-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" data-path="product" href="#">Product</a><a class="px-unit-3 py-unit-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" data-path="case-studies" href="#">Case Studies</a><a class="px-unit-3 py-unit-1 rounded-full font-label-md text-label-md text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-all" data-path="contact" href="#">Contact</a></nav><div class="flex items-center gap-unit-4"><a class="interactive-cta hidden sm:inline-flex items-center px-unit-4 py-unit-2 rounded-lg bg-surface-container-lowest text-primary-container font-label-md text-label-md tracking-widest uppercase transition-all shadow-[0_0_14px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] hover:bg-surface-container-high hover:shadow-[0_0_22px_rgba(34,211,238,0.6)]" data-path="console-terminal" href="#">[ ACCESS CONSOLE ]</a><div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center cursor-pointer hover:shadow-[0_0_10px_#8aebff] transition-all"><span class="material-symbols-outlined text-on-primary text-[18px]">person</span></div></div></div></header><main class="w-full pt-20 bg-background min-h-screen"><div class="flex flex-col w-full">
+<!-- Top Ambient Telemetry Strip -->
+<div class="w-full bg-surface-container-lowest py-unit-2 px-unit-6 flex flex-wrap items-center justify-between gap-y-2 border-b border-surface-container">
+<div class="flex items-center gap-unit-4 flex-wrap">
+<div class="flex items-center gap-unit-2">
+<div class="relative flex items-center justify-center w-2 h-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="radar-ping"></span>
+</div>
+<span class="font-eyebrow-code text-eyebrow-code text-primary tracking-widest uppercase">STATUS: OPERATIONAL</span>
+</div>
+<span class="text-outline-variant font-label-sm text-label-sm hidden md:inline">|</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider">LATENCY: <span class="text-primary tabular-nums" id="live-latency">14ms</span></span>
+<span class="text-outline-variant font-label-sm text-label-sm hidden md:inline">|</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider">THROUGHPUT: <span class="text-on-surface tabular-nums" id="live-throughput">1,482 DOCS/SEC</span></span>
+</div>
+<div class="flex items-center gap-unit-3 font-label-sm text-label-sm">
+<span class="text-on-surface-variant uppercase">STATE:</span>
+<span class="px-unit-2 py-0.5 rounded bg-surface-container-high text-primary-container font-eyebrow-code text-eyebrow-code tracking-widest shadow-[0_0_10px_rgba(34,211,238,0.2)]">[ MULTI-FORMAT ENGINE // LIVE ]</span>
+</div>
+</div>
+<!-- SECTION 1: HERO SECTION -->
+<section class="w-full max-w-[1440px] mx-auto px-unit-6 pt-unit-12 pb-unit-16 flex flex-col items-center text-center relative">
+<!-- Eyebrow Pill -->
+<div class="inline-flex items-center gap-unit-2 px-unit-3 py-unit-1 rounded-full bg-surface-container-lowest shadow-[0_0_12px_rgba(34,211,238,0.25)] mb-unit-6 hover:shadow-[0_0_20px_rgba(34,211,238,0.45)] transition-all cursor-default">
+<div class="relative flex items-center justify-center w-2.5 h-2.5">
+<span class="w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="radar-ping"></span>
+</div>
+<span class="font-eyebrow-code text-eyebrow-code text-primary tracking-widest uppercase">[ CONTENT TRANSFORMATION ENGINE // v3.4.8 ]</span>
+</div>
+<!-- Main Headline -->
+<h1 class="font-display-xl text-display-xl text-on-surface tracking-tight max-w-5xl mx-auto mb-unit-4">
+      Raw Source In. <span class="text-primary-container drop-shadow-[0_0_12px_rgba(34,211,238,0.35)]">Polished Multi-Channel Assets Out.</span> In One Pass.
+    </h1>
+<!-- Subheadline -->
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-3xl mx-auto mb-unit-8 font-normal leading-relaxed">
+      Transform research papers, news reports, policy briefs, and raw media into targeted executive deliverables simultaneously. Configure audience, tone, detail level, and style across seven output formats with zero context loss.
+    </p>
+<!-- CTAs -->
+<div class="flex flex-wrap items-center justify-center gap-unit-4 mb-unit-16">
+<a class="interactive-cta inline-flex items-center gap-unit-2 px-unit-6 py-unit-3 rounded-full bg-surface-container-lowest text-primary-container font-label-md text-label-md tracking-widest uppercase shadow-[0_0_16px_rgba(34,211,238,0.35),inset_0_0_0_1px_#22d3ee] hover:bg-surface-container-high hover:shadow-[0_0_26px_rgba(34,211,238,0.6)] hover:scale-[1.02] transition-all" href="#">
+<span class="material-symbols-outlined text-[18px]">terminal</span>
+<span class="">[ LAUNCH CONSOLE ]</span>
+</a>
+<a class="interactive-cta inline-flex items-center gap-unit-2 px-unit-6 py-unit-3 rounded-full bg-surface-container-lowest text-on-surface-variant font-label-md text-label-md tracking-widest uppercase shadow-[inset_0_0_0_1px_#1a1d28] hover:text-on-surface hover:bg-surface-container-high hover:shadow-[0_0_16px_rgba(34,211,238,0.2)] transition-all" href="#">
+<span class="material-symbols-outlined text-[18px]">analytics</span>
+<span class="">[ VIEW CASE STUDIES ]</span>
+</a>
+</div>
+<!-- INSET CONSOLE VIEWPORT PREVIEW (framed in HUD corner brackets) -->
+<div class="w-full max-w-5xl relative p-unit-1 bg-surface-container-lowest shadow-[0_0_40px_rgba(0,0,0,0.85),0_0_15px_rgba(34,211,238,0.12)] overflow-hidden rounded">
+<!-- Scanline HUD sweep line -->
+<div class="hud-sweep-line"></div>
+<!-- Reticle corner brackets -->
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container pointer-events-none -translate-x-0.5 -translate-y-0.5 z-30"></div>
+<div class="hud-bracket absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-primary-container pointer-events-none translate-x-0.5 -translate-y-0.5 z-30"></div>
+<div class="hud-bracket absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-primary-container pointer-events-none -translate-x-0.5 translate-y-0.5 z-30"></div>
+<div class="hud-bracket absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-primary-container pointer-events-none translate-x-0.5 translate-y-0.5 z-30"></div>
+<!-- Console Frame Bar -->
+<div class="w-full bg-surface-container-low px-unit-4 py-unit-2 flex items-center justify-between text-left border-b border-surface-container-high">
+<div class="flex items-center gap-unit-3">
+<div class="flex items-center gap-1.5">
+<span class="w-2.5 h-2.5 rounded-full bg-surface-variant hover:bg-red-500/80 transition-colors cursor-pointer"></span>
+<span class="w-2.5 h-2.5 rounded-full bg-surface-variant hover:bg-yellow-500/80 transition-colors cursor-pointer"></span>
+<span class="w-2.5 h-2.5 rounded-full bg-surface-variant hover:bg-green-500/80 transition-colors cursor-pointer"></span>
+</div>
+<span class="font-eyebrow-code text-eyebrow-code text-on-surface-variant tracking-wider uppercase">TRANSFORM_OPERATOR_SHELL // CONSOLE_SESSION_#8492</span>
+</div>
+<div class="flex items-center gap-unit-4 font-label-sm text-label-sm text-on-surface-variant">
+<span class="hidden sm:inline">BUFFER: <strong class="text-primary font-normal">16 SLOTS</strong></span>
+<span class="">LATENCY: <strong class="text-primary-container font-normal" id="hero-latency-display">14ms</strong></span>
+<span class="px-unit-2 py-0.5 rounded bg-surface-container-lowest text-primary-container text-[10px] tracking-wider font-label-sm shadow-[inset_0_0_0_1px_rgba(34,211,238,0.3)]">[ LIVE SYNC ]</span>
+</div>
+</div>
+<!-- 3-Panel Interactive HUD Workspace Preview -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-unit-1 p-unit-1 bg-surface-container-lowest text-left font-body-sm text-body-sm">
+<!-- Left Panel: Sources Buffer -->
+<div class="lg:col-span-3 bg-surface-container-low p-unit-3 flex flex-col gap-unit-2">
+<div class="flex items-center justify-between pb-unit-1">
+<span class="font-eyebrow-code text-eyebrow-code text-on-surface uppercase tracking-wider">// PIPELINE_INPUTS</span>
+<span class="font-label-sm text-label-sm text-primary-container">[ 3 STAGED ]</span>
+</div>
+<div class="p-unit-2 bg-surface-container-lowest rounded flex flex-col gap-1 hover:border-primary/40 border border-transparent transition-all cursor-pointer">
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span class="truncate text-on-surface">SEC_Q3_FINANCIALS.PDF</span>
+<span class="text-primary-container text-[10px]">100%</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full w-full shadow-[0_0_6px_#22d3ee]"></div>
+</div>
+<span class="text-[9px] text-outline tracking-wider font-label-sm">4.8 MB // 142 PAGES INGESTED</span>
+</div>
+<div class="p-unit-2 bg-surface-container-lowest rounded flex flex-col gap-1 hover:border-primary/40 border border-transparent transition-all cursor-pointer">
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span class="truncate text-on-surface">REUTERS_MACRO_FEED.URL</span>
+<span class="text-primary-container text-[10px]">100%</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full w-full shadow-[0_0_6px_#22d3ee]"></div>
+</div>
+<span class="text-[9px] text-outline tracking-wider font-label-sm">HTTPS_PARSE // 2,410 TOKENS</span>
+</div>
+<div class="p-unit-2 bg-surface-container-lowest rounded flex flex-col gap-1 hover:border-primary/40 border border-transparent transition-all cursor-pointer">
+<div class="flex items-center justify-between text-on-surface-variant font-label-sm text-label-sm">
+<span class="truncate text-on-surface">POLICY_DIRECTIVE_24.DOCX</span>
+<span class="text-primary-container text-[10px]">READY</span>
+</div>
+<div class="w-full bg-surface-container-high h-1 rounded-full overflow-hidden">
+<div class="bg-primary-container h-full w-full shadow-[0_0_6px_#22d3ee]"></div>
+</div>
+<span class="text-[9px] text-outline tracking-wider font-label-sm">TEXT EMBEDDED // CLUSTER 4</span>
+</div>
+<div class="mt-auto pt-unit-2 flex items-center justify-between font-label-sm text-label-sm text-outline">
+<span class="">MEM: 24.8%</span>
+<button class="text-primary font-eyebrow-code text-eyebrow-code hover:text-primary-container hover:underline transition-all cursor-pointer">[ + ADD SOURCE ]</button>
+</div>
+</div>
+<!-- Center Panel: Synthesis Canvas & Format Chips -->
+<div class="lg:col-span-6 bg-surface-container-low p-unit-4 flex flex-col justify-between">
+<div>
+<div class="flex items-center justify-between pb-unit-2 mb-unit-3">
+<div class="flex items-center gap-unit-2">
+<div class="relative flex items-center justify-center w-2 h-2">
+<span class="w-2 h-2 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+<span class="radar-ping"></span>
+</div>
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container uppercase tracking-wider" id="sys-status-label">[ SYS_IDLE // READY ]</span>
+</div>
+<span class="font-label-sm text-label-sm text-outline-variant font-mono">NODE_EXEC_DISPATCH</span>
+</div>
+<!-- Format Quick Chips (interactive toggle) -->
+<div class="flex flex-wrap gap-1.5 mb-unit-4" id="hero-chip-container">
+<button class="hero-chip px-unit-2 py-1 rounded bg-surface-container-lowest text-on-surface-variant font-label-sm text-label-sm hover:text-primary border border-transparent transition-all cursor-pointer" data-format="ARTICLES">[ ARTICLES ]</button>
+<button class="hero-chip px-unit-2 py-1 rounded bg-surface-container-lowest text-on-surface-variant font-label-sm text-label-sm hover:text-primary border border-transparent transition-all cursor-pointer" data-format="REPORTS">[ REPORTS ]</button>
+<button class="hero-chip px-unit-2 py-1 rounded bg-surface-container-lowest text-primary font-label-sm text-label-sm shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] border border-transparent cursor-pointer active-chip" data-format="PDF">[ PDF / DOCS ]</button>
+<button class="hero-chip px-unit-2 py-1 rounded bg-surface-container-lowest text-on-surface-variant font-label-sm text-label-sm hover:text-primary border border-transparent transition-all cursor-pointer" data-format="MEDIA">[ IMAGES / VIDEO ]</button>
+<button class="hero-chip px-unit-2 py-1 rounded bg-surface-container-lowest text-on-surface-variant font-label-sm text-label-sm hover:text-primary border border-transparent transition-all cursor-pointer" data-format="PROMPTS">[ PROMPTS ]</button>
+</div>
+<!-- Terminal Mock Readout -->
+<div class="bg-surface-container-lowest p-unit-3 rounded font-body-sm text-body-sm text-on-surface-variant space-y-1 relative overflow-hidden" id="terminal-readout">
+<div class="text-outline font-label-sm text-label-sm">// PARALLEL VECTOR SYNTHESIS STREAM INITIATED</div>
+<div class="text-on-surface">&gt; Context extraction complete across 3 document streams.</div>
+<div class="text-primary">&gt; Core theses mapped: 14 key facts, 4 strategic risks, 6 operational directives.</div>
+<div class="text-on-surface-variant" id="terminal-deliverables-line">&gt; Target deliverables chosen: [ADVISORY] [LINKEDIN] [EXEC_SUMMARY]</div>
+<div class="flex items-center gap-unit-2 pt-1 text-primary-container" id="terminal-dispatch-status">
+<span class="material-symbols-outlined text-[14px] animate-spin" id="dispatch-spin-icon">refresh</span>
+<span class="font-eyebrow-code text-eyebrow-code" id="dispatch-status-text">READY TO DISPATCH BATCH TRANSFORMATION</span>
+</div>
+</div>
+</div>
+<div class="mt-unit-4 pt-unit-3 flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-outline">AUTO-CALIBRATION: ACTIVE</span>
+<button class="interactive-cta px-unit-3 py-1.5 rounded bg-surface-container-high text-primary-container font-label-md text-label-md tracking-wider uppercase shadow-[0_0_10px_rgba(34,211,238,0.3),inset_0_0_0_1px_#22d3ee] hover:bg-surface-container-highest hover:shadow-[0_0_18px_rgba(34,211,238,0.5)] transition-all cursor-pointer" id="btn-transform-trigger">
+              TRANSFORM ALL (<span id="active-format-count">3</span> FORMATS)
+            </button>
+</div>
+</div>
+<!-- Right Panel: Studio Outputs Buffer -->
+<div class="lg:col-span-3 bg-surface-container-low p-unit-3 flex flex-col gap-unit-2">
+<div class="flex items-center justify-between pb-unit-1">
+<span class="font-eyebrow-code text-eyebrow-code text-on-surface uppercase tracking-wider">// STUDIO_OUTPUTS</span>
+<span class="font-label-sm text-label-sm text-primary">LIVE QUEUE</span>
+</div>
+<!-- Staged Output Item 1 -->
+<div class="p-unit-2 bg-surface-container-lowest rounded flex flex-col gap-1 hover:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all cursor-pointer group">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-primary font-bold group-hover:text-primary-container">ADVISORY BRIEF</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+</div>
+<span class="text-on-surface font-body-sm text-body-sm line-clamp-1">Q3 Operational Risk Vector &amp; Capital Hedging Strategy</span>
+<span class="text-[9px] text-outline font-label-sm text-label-sm">FORMAT: 2-PAGE PDF / SLACK READY</span>
+</div>
+<!-- Staged Output Item 2 -->
+<div class="p-unit-2 bg-surface-container-lowest rounded flex flex-col gap-1 hover:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all cursor-pointer group">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-primary font-bold group-hover:text-primary-container">EXEC SUMMARY</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+</div>
+<span class="text-on-surface font-body-sm text-body-sm line-clamp-1">3-Minute Boardroom Synthesized Briefing</span>
+<span class="text-[9px] text-outline font-label-sm text-label-sm">FORMAT: MARKDOWN / EMAIL READY</span>
+</div>
+<!-- Staged Output Item 3 -->
+<div class="p-unit-2 bg-surface-container-lowest rounded flex flex-col gap-1 hover:shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all cursor-pointer group">
+<div class="flex items-center justify-between">
+<span class="font-label-sm text-label-sm text-primary font-bold group-hover:text-primary-container">LINKEDIN THREAD</span>
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+</div>
+<span class="text-on-surface font-body-sm text-body-sm line-clamp-1">Executive POV with carousel outline</span>
+<span class="text-[9px] text-outline font-label-sm text-label-sm">FORMAT: RICH TEXT + COPY-BUFFER</span>
+</div>
+<div class="mt-auto pt-unit-2">
+<button class="interactive-cta w-full py-1 rounded bg-surface-container text-outline hover:text-on-surface hover:bg-surface-container-high font-label-sm text-label-sm tracking-wider uppercase text-center transition-colors cursor-pointer" id="btn-export-workspace">
+              [ EXPORT ALL TO WORKSPACE ]
+            </button>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 2: STUDIO DELIVERABLES SHOWCASE (The Exact 7 Formats) -->
+<section class="w-full bg-surface-container-lowest py-unit-24 border-y border-surface-container">
+<div class="max-w-[1440px] mx-auto px-unit-6">
+<!-- Section Header -->
+<div class="flex flex-col items-center text-center mb-unit-16">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container tracking-widest uppercase mb-unit-2">[ STUDIO OUTPUT MATRIX ]</span>
+<h2 class="font-headline-lg text-headline-lg text-on-surface max-w-2xl mb-unit-4">
+          Seven Purpose-Built Deliverables. Selected &amp; Generated Simultaneously.
+        </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">
+          Zero prompt chaining. Zero context degradation. Click multiple formats, configure operator weights, and generate synchronized deliverables from the exact same source baseline.
+        </p>
+<div class="mt-unit-3 text-label-sm font-label-sm text-outline-variant flex items-center gap-unit-2">
+<span class="material-symbols-outlined text-[16px] text-primary">touch_app</span>
+<span>CLICK CARDS TO TOGGLE ACTIVE GENERATION QUEUE (<span class="text-primary-container" id="matrix-active-count">4</span>/7 SELECTED)</span>
+</div>
+</div>
+<!-- High-Contrast 7-Card Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-unit-6" id="studio-cards-grid">
+<!-- 1. Video Package -->
+<div class="interactive-card studio-card bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent" data-card-id="video">
+<div class="hud-bracket absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-primary-container opacity-60 group-hover:opacity-100"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_6px_rgba(0,0,0,0.5)] group-hover:text-primary">
+<span class="material-symbols-outlined text-[24px]">videocam</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-outline-variant"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-outline tracking-wider">[ 01 // A/V ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Video Package</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+              Camera directions, voiceover script blocks, precise timestamp markers, and B-roll callouts formatted directly for executive video production.
+            </p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">TIMESTAMPS: YES</span>
+<span class="text-primary-container">VO_CUES // OK</span>
+</div>
+</div>
+<!-- 2. LinkedIn Post -->
+<div class="interactive-card studio-card active bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent" data-card-id="linkedin">
+<div class="hud-bracket absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-primary-container opacity-60 group-hover:opacity-100"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_6px_rgba(0,0,0,0.5)] group-hover:text-primary">
+<span class="material-symbols-outlined text-[24px]">campaign</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-outline tracking-wider">[ 02 // EXEC_POV ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">LinkedIn Post</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+              High-authority executive takeaways, scroll-stopping contextual hooks, and cleanly structured bullet syntax tuned for senior network distribution.
+            </p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">HOOK SYNTHESIS</span>
+<span class="text-primary-container">C-SUITE TONE</span>
+</div>
+</div>
+<!-- 3. Twitter/X Post -->
+<div class="interactive-card studio-card bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent" data-card-id="twitter">
+<div class="hud-bracket absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-primary-container opacity-60 group-hover:opacity-100"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_6px_rgba(0,0,0,0.5)] group-hover:text-primary">
+<span class="material-symbols-outlined text-[24px]">forum</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-outline-variant"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-outline tracking-wider">[ 03 // DISPATCH ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Twitter/X Post</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+              High-impact serialized thread breakdowns, single-tweet distillation, and modular quote blocks optimized for rapid viral telemetry.
+            </p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">THREADED // 280-CH</span>
+<span class="text-primary-container">NUMERICAL HOOKS</span>
+</div>
+</div>
+<!-- 4. Advisory (Featured Card with full brackets) -->
+<div class="interactive-card studio-card active bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent shadow-[0_0_16px_rgba(34,211,238,0.15)]" data-card-id="advisory">
+<!-- Full corner brackets -->
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div class="hud-bracket absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-primary-container"></div>
+<div class="hud-bracket absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-primary-container"></div>
+<div class="hud-bracket absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-primary-container"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_10px_rgba(34,211,238,0.4)] group-hover:shadow-[0_0_16px_rgba(34,211,238,0.6)] transition-shadow">
+<span class="material-symbols-outlined text-[24px]">verified_user</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container tracking-wider">[ 04 // BRIEFING ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Advisory</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">Structured briefing documents with clear findings, recommendations, and risk context — formatted for fast decision-making.</p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">AUDIENCE: LEADERSHIP</span>
+<span class="text-primary font-bold">DECISION READY</span>
+</div>
+</div>
+<!-- 5. Infographic -->
+<div class="interactive-card studio-card bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent" data-card-id="infographic">
+<div class="hud-bracket absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-primary-container opacity-60 group-hover:opacity-100"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_6px_rgba(0,0,0,0.5)] group-hover:text-primary">
+<span class="material-symbols-outlined text-[24px]">bar_chart</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-outline-variant"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-outline tracking-wider">[ 05 // DATA_VIZ ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Infographic</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+              Clear visual hierarchy descriptions, statistical metric callouts, flow schemas, and designer handoff prompts ready for vector drafting.
+            </p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">METRIC ISOLATION</span>
+<span class="text-primary-container">LAYOUT SCHEMAS</span>
+</div>
+</div>
+<!-- 6. Executive Summary -->
+<div class="interactive-card studio-card active bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent" data-card-id="exec-summary">
+<div class="hud-bracket absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-primary-container opacity-60 group-hover:opacity-100"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_6px_rgba(0,0,0,0.5)] group-hover:text-primary">
+<span class="material-symbols-outlined text-[24px]">description</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-outline tracking-wider">[ 06 // TL;DR ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Executive Summary</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+              Condensed strategic synthesis, decision-tree condensations, and essential bottom-line implications tailored for the board deck.
+            </p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">DENSITY: MAX</span>
+<span class="text-primary-container">DECISION-FOCUSED</span>
+</div>
+</div>
+<!-- 7. Presentation -->
+<div class="interactive-card studio-card active bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative group cursor-pointer border border-transparent lg:col-span-2 xl:col-span-2" data-card-id="presentation">
+<div class="hud-bracket absolute top-0 left-0 w-2.5 h-2.5 border-t border-l border-primary-container opacity-60 group-hover:opacity-100"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<div class="w-10 h-10 rounded bg-surface-container-lowest flex items-center justify-center text-primary-container shadow-[0_0_6px_rgba(0,0,0,0.5)] group-hover:text-primary">
+<span class="material-symbols-outlined text-[24px]">slideshow</span>
+</div>
+<div class="flex items-center gap-unit-2">
+<span class="card-status-dot w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="font-eyebrow-code text-eyebrow-code text-outline tracking-wider">[ 07 // KEYNOTE ]</span>
+</div>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 group-hover:text-primary transition-colors">Presentation Deck</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+              Slide-by-slide outline including headline narrative, visual focal points, detailed presenter talking points, and audience Q&amp;A defense scripts.
+            </p>
+</div>
+<div class="pt-unit-3 flex items-center justify-between font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">SPEAKER NOTES: INCLUDED</span>
+<span class="text-primary-container">DECK ARCHITECTURE // 10-15 SLIDES</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 3: HOW IT WORKS (3-Step Pipeline Flow) -->
+<section class="w-full max-w-[1440px] mx-auto px-unit-6 py-unit-24">
+<!-- Section Header -->
+<div class="flex flex-col items-center text-center mb-unit-16">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container tracking-widest uppercase mb-unit-2">[ EXECUTION PIPELINE ]</span>
+<h2 class="font-headline-lg text-headline-lg text-on-surface max-w-2xl mb-unit-4">
+        From Raw Intelligence to Cohesive Distribution in Seconds.
+      </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">
+        A single deterministic pass eliminates the friction of prompt fragmentation, context drifts, and cross-channel inconsistencies.
+      </p>
+</div>
+<!-- 3 Connected Horizontal Pipeline Nodes -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-unit-6 relative">
+<!-- Node 01 -->
+<div class="interactive-card bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative shadow-[0_0_12px_rgba(0,0,0,0.4)]">
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container font-bold tracking-widest">[ NODE_01 ]</span>
+<span class="material-symbols-outlined text-outline-variant text-[20px]">input</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 uppercase">Ingest Source Material</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+            Paste or upload news articles, policy documents, PDFs, research reports, images/video, or free-form operator prompts into the ingestion pipeline buffer.
+          </p>
+</div>
+<div class="pt-unit-4 bg-surface-container-lowest p-unit-3 rounded font-label-sm text-label-sm text-outline-variant space-y-1">
+<div class="">// SUPPORTED PROTOCOLS:</div>
+<div class="text-primary font-mono">PDF, DOCX, URL_SCRAPE, RAW_TXT, MP4</div>
+</div>
+</div>
+<!-- Node 02 -->
+<div class="interactive-card bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative shadow-[0_0_12px_rgba(0,0,0,0.4)]">
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container font-bold tracking-widest">[ NODE_02 ]</span>
+<span class="material-symbols-outlined text-outline-variant text-[20px]">tune</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 uppercase">Calibrate &amp; Select Formats</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+            Multi-select target deliverables from the Studio grid and fine-tune generation parameters (Audience, Tone, Language, Detail Level, and Objective).
+          </p>
+</div>
+<div class="pt-unit-4 bg-surface-container-lowest p-unit-3 rounded font-label-sm text-label-sm text-outline-variant space-y-1">
+<div class="">// PARAMETERS ACTIVE:</div>
+<div class="text-primary font-mono">5 CALIBRATION AXES // MULTI-SELECT</div>
+</div>
+</div>
+<!-- Node 03 -->
+<div class="interactive-card bg-surface-container-low p-unit-6 rounded flex flex-col justify-between relative shadow-[0_0_12px_rgba(0,0,0,0.4)]">
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container font-bold tracking-widest">[ NODE_03 ]</span>
+<span class="material-symbols-outlined text-outline-variant text-[20px]">bolt</span>
+</div>
+<h3 class="font-headline-sm text-headline-sm text-on-surface mb-unit-2 uppercase">Simultaneous Generation</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-4">
+            Execute single-pass transformation. Deliverables populate the Studio Output buffer concurrently, ready for operator review, clipboard export, or automation webhooks.
+          </p>
+</div>
+<div class="pt-unit-4 bg-surface-container-lowest p-unit-3 rounded font-label-sm text-label-sm text-outline-variant space-y-1">
+<div class="">// DISPATCH TIME:</div>
+<div class="text-primary font-mono">&lt; 2.4 SECONDS ALL FORMATS</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 4: CORE DIFFERENTIATORS (Two-Column Deep Dive) -->
+<section class="w-full bg-surface-container-lowest py-unit-24 border-t border-surface-container">
+<div class="max-w-[1440px] mx-auto px-unit-6">
+<!-- Section Header -->
+<div class="flex flex-col items-center text-center mb-unit-16">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container tracking-widest uppercase mb-unit-2">[ SYSTEM ARCHITECTURE ]</span>
+<h2 class="font-headline-lg text-headline-lg text-on-surface max-w-2xl mb-unit-4">
+          Engineered for Zero Context Loss &amp; Uncompromising Precision.
+        </h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-xl">
+          Traditional AI prompts fragment your source across multiple conversational sessions. Transform Console maps one unified neural context across every output channel.
+        </p>
+</div>
+<!-- Two-Column Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-unit-8">
+<!-- Card A: Simultaneous Multi-Select Synthesis -->
+<div class="interactive-card bg-surface-container-low p-unit-8 rounded flex flex-col justify-between relative shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div class="hud-bracket absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-primary-container"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container uppercase tracking-widest">[ CONTEXT CONCURRENCY ]</span>
+<div class="relative flex items-center justify-center w-2 h-2">
+<span class="w-2 h-2 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+<span class="radar-ping"></span>
+</div>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-unit-2">Simultaneous Multi-Select Synthesis</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-6">
+              Branching one source concurrently into multiple deliverables without prompt drift. When you alter a key fact in your source document, every connected deliverable updates synchronously.
+            </p>
+<!-- Visual branching HUD diagram -->
+<div class="bg-surface-container-lowest p-unit-4 rounded mb-unit-4 font-label-sm text-label-sm">
+<div class="flex items-center gap-unit-3 pb-unit-3 mb-unit-3 border-b border-surface-container">
+<span class="px-unit-2 py-1 rounded bg-surface-container-high text-on-surface font-mono">[ 1 RAW SOURCE ]</span>
+<span class="text-primary material-symbols-outlined text-[16px] animate-pulse">arrow_forward</span>
+<span class="text-primary-container font-mono">[ NEURAL CONTEXT ANCHOR ]</span>
+</div>
+<!-- Concurrent branches -->
+<div class="space-y-2 pl-unit-4">
+<div class="flex items-center justify-between p-unit-2 bg-surface-container-low rounded hover:bg-surface-container transition-colors">
+<div class="flex items-center gap-unit-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+<span class="text-on-surface font-mono">BRANCH 01 // ADVISORY BRIEF</span>
+</div>
+<span class="text-primary-container font-label-sm text-label-sm">WEIGHT: 100%</span>
+</div>
+<div class="flex items-center justify-between p-unit-2 bg-surface-container-low rounded hover:bg-surface-container transition-colors">
+<div class="flex items-center gap-unit-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+<span class="text-on-surface font-mono">BRANCH 02 // LINKEDIN CAROUSEL</span>
+</div>
+<span class="text-primary-container font-label-sm text-label-sm">WEIGHT: 100%</span>
+</div>
+<div class="flex items-center justify-between p-unit-2 bg-surface-container-low rounded hover:bg-surface-container transition-colors">
+<div class="flex items-center gap-unit-2">
+<span class="w-1.5 h-1.5 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+<span class="text-on-surface font-mono">BRANCH 03 // EXEC SUMMARY</span>
+</div>
+<span class="text-primary-container font-label-sm text-label-sm">WEIGHT: 100%</span>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-unit-3 font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">ZERO CONTEXT LOSS GUARANTEE</span>
+<span class="text-primary">100% FACT RE-CHECK</span>
+</div>
+</div>
+<!-- Card B: Granular Operator Calibration -->
+<div class="interactive-card bg-surface-container-low p-unit-8 rounded flex flex-col justify-between relative shadow-[0_0_20px_rgba(0,0,0,0.5)]">
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div class="hud-bracket absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-primary-container"></div>
+<div>
+<div class="flex items-center justify-between mb-unit-4">
+<span class="font-eyebrow-code text-eyebrow-code text-primary-container uppercase tracking-widest">[ CONTROL MATRIX ]</span>
+<div class="relative flex items-center justify-center w-2 h-2">
+<span class="w-2 h-2 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span>
+<span class="radar-ping"></span>
+</div>
+</div>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-unit-2">Granular Operator Calibration</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-unit-6">
+              Precision parameters dial in voice, depth, and tactical intent across all selected deliverables with mechanical reproducibility.
+            </p>
+<!-- Parameter Matrix Interactive Display -->
+<div class="space-y-unit-3 bg-surface-container-lowest p-unit-4 rounded font-label-sm text-label-sm" id="calibration-matrix">
+<!-- Axis 1: Audience -->
+<div class="param-row" data-param="audience">
+<div class="flex justify-between text-outline-variant font-mono mb-1">
+<span class="">// AUDIENCE:</span>
+<span class="text-primary param-selected-label">EXECUTIVE</span>
+</div>
+<div class="grid grid-cols-3 gap-1">
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-high text-primary font-bold text-center shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] transition-all cursor-pointer" data-value="EXECUTIVE">EXECUTIVE</button>
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="PRACTITIONER">PRACTITIONER</button>
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="PUBLIC">PUBLIC</button>
+</div>
+</div>
+<!-- Axis 2: Tone -->
+<div class="param-row" data-param="tone">
+<div class="flex justify-between text-outline-variant font-mono mb-1">
+<span class="">// TONE:</span>
+<span class="text-primary param-selected-label">OBJECTIVE ANALYTICAL</span>
+</div>
+<div class="grid grid-cols-3 gap-1">
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-high text-primary font-bold text-center shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] transition-all cursor-pointer" data-value="ANALYTICAL">ANALYTICAL</button>
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="URGENT">URGENT</button>
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="CONVERSATIONAL">CONVERSATIONAL</button>
+</div>
+</div>
+<!-- Axis 3: Detail Level -->
+<div class="param-row" data-param="detail">
+<div class="flex justify-between text-outline-variant font-mono mb-1">
+<span class="">// DETAIL LEVEL:</span>
+<span class="text-primary param-selected-label">COMPACT TL;DR</span>
+</div>
+<div class="grid grid-cols-3 gap-1">
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-high text-primary font-bold text-center shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] transition-all cursor-pointer" data-value="COMPACT TL;DR">COMPACT TL;DR</button>
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="COMPREHENSIVE">COMPREHENSIVE</button>
+<button class="param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="BULLETED">BULLETED</button>
+</div>
+</div>
+<!-- Axis 4: Objective -->
+<div class="param-row" data-param="objective">
+<div class="flex justify-between text-outline-variant font-mono mb-1">
+<span class="">// OBJECTIVE:</span>
+<span class="text-primary param-selected-label">ADVISE</span>
+</div>
+<div class="grid grid-cols-4 gap-1">
+<button class="param-pill px-unit-1 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="INFORM">INFORM</button>
+<button class="param-pill px-unit-1 py-1 rounded bg-surface-container-high text-primary font-bold text-center shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] transition-all cursor-pointer" data-value="ADVISE">ADVISE</button>
+<button class="param-pill px-unit-1 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="SYNTHESIZE">SYNTHESIZE</button>
+<button class="param-pill px-unit-1 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer" data-value="INSTRUCT">INSTRUCT</button>
+</div>
+</div>
+</div>
+</div>
+<div class="flex items-center justify-between pt-unit-3 font-label-sm text-label-sm text-outline border-t border-surface-container/60">
+<span class="">PRESET EXPORTS: REUSABLE</span>
+<span class="text-primary">OPERATOR CONFIG #084</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- SECTION 5: BOTTOM HUD CTA DOCK -->
+<section class="w-full max-w-[1440px] mx-auto px-unit-6 py-unit-24">
+<div class="interactive-card w-full bg-surface-container-low p-unit-8 md:p-unit-12 rounded relative shadow-[0_0_30px_rgba(0,0,0,0.8)] flex flex-col md:flex-row items-center justify-between gap-unit-8">
+<!-- Corner Brackets around Dock -->
+<div class="hud-bracket absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-primary-container"></div>
+<div class="hud-bracket absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-primary-container"></div>
+<div class="hud-bracket absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-primary-container"></div>
+<div class="hud-bracket absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-primary-container"></div>
+<!-- Text Details -->
+<div class="flex flex-col max-w-2xl text-left">
+<div class="flex items-center gap-unit-2 mb-unit-3">
+<div class="relative flex items-center justify-center w-2 h-2">
+<span class="w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]"></span>
+<span class="radar-ping"></span>
+</div>
+<span class="font-eyebrow-code text-eyebrow-code text-primary tracking-widest uppercase">[ PIPELINE READY // IMMEDIATE DEPLOYMENT ]</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg text-on-surface tracking-tight mb-unit-2">
+          Ready to deploy content transformation at operator speed?
+        </h2>
+<p class="font-body-md text-body-md text-on-surface-variant">
+          Connect your data streams, choose your target formats, and generate polished executive assets in one synchronized pass.
+        </p>
+</div>
+<!-- Action Button & Shortcut Hint -->
+<div class="flex flex-col items-center md:items-end gap-unit-2 shrink-0">
+<a class="interactive-cta inline-flex items-center gap-unit-3 px-unit-8 py-unit-4 rounded-full bg-surface-container-lowest text-primary-container font-label-md text-label-md tracking-widest uppercase shadow-[0_0_20px_rgba(34,211,238,0.4),inset_0_0_0_1px_#22d3ee] hover:bg-surface-container-high hover:shadow-[0_0_32px_rgba(34,211,238,0.65)] hover:scale-[1.03] transition-all" href="#">
+<span class="material-symbols-outlined text-[20px]">play_arrow</span>
+<span class="">[ INITIALIZE CONSOLE ]</span>
+</a>
+<span class="font-label-sm text-label-sm text-outline tracking-wider font-mono uppercase">
+          EXEC: <span class="text-primary-container">⌘ + ↵</span>
+</span>
+</div>
+</div>
+</section>
+</div></main><footer class="w-full bg-surface-container-lowest py-unit-8 border-t border-surface-container"><div class="max-w-[1440px] mx-auto px-unit-6 flex flex-col md:flex-row items-center justify-between gap-unit-4 font-label-sm text-label-sm text-on-surface-variant"><div class="flex items-center gap-unit-3"><div class="flex items-center gap-unit-2 px-unit-2 py-unit-1 bg-surface-container-low rounded-lg shadow-[inset_0_0_0_1px_rgba(34,211,238,0.25)]"><div class="relative flex items-center justify-center w-2 h-2"><span class="w-2 h-2 rounded-full bg-primary-container shadow-[0_0_6px_#22d3ee]"></span><span class="radar-ping"></span></div><span class="text-primary-container font-eyebrow-code text-eyebrow-code tracking-wider">[ SYS_OK // LATENCY: 12ms ]</span></div><span class="hidden lg:inline text-outline-variant font-label-sm text-label-sm">// REL_ENG: v3.4.8-PROD</span></div><div class="flex items-center gap-unit-6 font-label-sm text-label-sm tracking-wider"><a class="hover:text-on-surface transition-colors uppercase" data-path="privacy-policy" href="#">Privacy</a><a class="hover:text-on-surface transition-colors uppercase" data-path="terms-of-service" href="#">Terms</a><span class="text-outline-variant">© 2024 TRANSFORM CONSOLE. ALL RIGHTS RESERVED.</span></div></div></footer>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Studio Deliverable Cards: Multi-select toggle
+  const studioCards = document.querySelectorAll('.studio-card');
+  const matrixCounter = document.getElementById('matrix-active-count');
+
+  function updateMatrixCount() {
+    const activeCount = document.querySelectorAll('.studio-card.active').length;
+    if (matrixCounter) matrixCounter.textContent = activeCount;
+  }
+
+  studioCards.forEach(card => {
+    card.addEventListener('click', () => {
+      card.classList.toggle('active');
+      const dot = card.querySelector('.card-status-dot');
+      if (card.classList.contains('active')) {
+        dot.className = 'card-status-dot w-2 h-2 rounded-full bg-primary-container shadow-[0_0_8px_#22d3ee]';
+      } else {
+        dot.className = 'card-status-dot w-2 h-2 rounded-full bg-outline-variant';
+      }
+      updateMatrixCount();
+    });
+  });
+
+  // 2. Operator Calibration Matrix: Interactive pill selections
+  const paramRows = document.querySelectorAll('.param-row');
+  paramRows.forEach(row => {
+    const pills = row.querySelectorAll('.param-pill');
+    const labelSpan = row.querySelector('.param-selected-label');
+
+    pills.forEach(pill => {
+      pill.addEventListener('click', () => {
+        pills.forEach(p => {
+          p.className = 'param-pill px-unit-2 py-1 rounded bg-surface-container-low text-on-surface-variant text-center hover:text-on-surface transition-all cursor-pointer';
+        });
+        pill.className = 'param-pill px-unit-2 py-1 rounded bg-surface-container-high text-primary font-bold text-center shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee] transition-all cursor-pointer';
+        if (labelSpan) {
+          labelSpan.textContent = pill.getAttribute('data-value') || pill.textContent.trim();
+        }
+      });
+    });
+  });
+
+  // 3. Hero Console Preview: Format Chips toggle
+  const heroChips = document.querySelectorAll('.hero-chip');
+  const activeFormatCounter = document.getElementById('active-format-count');
+  const terminalDeliverables = document.getElementById('terminal-deliverables-line');
+
+  function updateChipState() {
+    const activeChips = Array.from(heroChips).filter(c => c.classList.contains('active-chip'));
+    if (activeFormatCounter) {
+      activeFormatCounter.textContent = activeChips.length;
+    }
+    if (terminalDeliverables) {
+      const names = activeChips.map(c => '[' + (c.getAttribute('data-format') || c.textContent.replace(/[\[\]]/g, '').trim()) + ']');
+      terminalDeliverables.textContent = '> Target deliverables chosen: ' + (names.length ? names.join(' ') : '[NONE SELECTED]');
+    }
+  }
+
+  heroChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      if (chip.classList.contains('active-chip')) {
+        chip.classList.remove('active-chip', 'text-primary', 'shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee]');
+        chip.classList.add('text-on-surface-variant');
+      } else {
+        chip.classList.add('active-chip', 'text-primary', 'shadow-[0_0_8px_rgba(34,211,238,0.25),inset_0_0_0_1px_#22d3ee]');
+        chip.classList.remove('text-on-surface-variant');
+      }
+      updateChipState();
+    });
+  });
+
+  // 4. Hero Dispatch Simulation
+  const btnTransform = document.getElementById('btn-transform-trigger');
+  const sysStatus = document.getElementById('sys-status-label');
+  const dispatchText = document.getElementById('dispatch-status-text');
+  const spinIcon = document.getElementById('dispatch-spin-icon');
+  let isDispatching = false;
+
+  if (btnTransform) {
+    btnTransform.addEventListener('click', () => {
+      if (isDispatching) return;
+      isDispatching = true;
+      btnTransform.disabled = true;
+
+      // Status update
+      if (sysStatus) {
+        sysStatus.textContent = '[ SYS_EXECUTING // DISPATCH ]';
+        sysStatus.className = 'font-eyebrow-code text-eyebrow-code text-error tracking-wider';
+      }
+      if (dispatchText) {
+        dispatchText.textContent = 'DISPATCHING SYNTHESIS TO 3 PARALLEL WORKERS...';
+        dispatchText.className = 'font-eyebrow-code text-eyebrow-code text-primary-container animate-pulse';
+      }
+      if (spinIcon) {
+        spinIcon.className = 'material-symbols-outlined text-[14px] animate-spin text-primary';
+      }
+
+      setTimeout(() => {
+        if (dispatchText) {
+          dispatchText.textContent = 'SYNTHESIS COMPLETE. DELIVERABLES STREAMED.';
+          dispatchText.className = 'font-eyebrow-code text-eyebrow-code text-primary font-bold';
+        }
+        if (sysStatus) {
+          sysStatus.textContent = '[ SYS_COMPLETE // 100% ]';
+          sysStatus.className = 'font-eyebrow-code text-eyebrow-code text-primary-container tracking-wider';
+        }
+
+        setTimeout(() => {
+          if (sysStatus) {
+            sysStatus.textContent = '[ SYS_IDLE // READY ]';
+            sysStatus.className = 'font-eyebrow-code text-eyebrow-code text-primary-container uppercase tracking-wider';
+          }
+          if (dispatchText) {
+            dispatchText.textContent = 'READY TO DISPATCH BATCH TRANSFORMATION';
+            dispatchText.className = 'font-eyebrow-code text-eyebrow-code';
+          }
+          btnTransform.disabled = false;
+          isDispatching = false;
+        }, 2500);
+      }, 1600);
+    });
+  }
+
+  // 5. Workspace Export Trigger
+  const btnExport = document.getElementById('btn-export-workspace');
+  if (btnExport) {
+    btnExport.addEventListener('click', () => {
+      const original = btnExport.textContent;
+      btnExport.textContent = '[ COPIED TO WORKSPACE ]';
+      btnExport.classList.add('text-primary', 'border', 'border-primary/40');
+      setTimeout(() => {
+        btnExport.textContent = original;
+        btnExport.classList.remove('text-primary', 'border', 'border-primary/40');
+      }, 1800);
+    });
+  }
+
+  // 6. Ambient telemetry fluctuations
+  const latencyEl = document.getElementById('live-latency');
+  const heroLatencyEl = document.getElementById('hero-latency-display');
+  const throughputEl = document.getElementById('live-throughput');
+
+  setInterval(() => {
+    const lat = 12 + Math.floor(Math.random() * 5);
+    if (latencyEl) latencyEl.textContent = lat + 'ms';
+    if (heroLatencyEl) heroLatencyEl.textContent = lat + 'ms';
+    const docs = 1475 + Math.floor(Math.random() * 18);
+    if (throughputEl) throughputEl.textContent = docs.toLocaleString() + ' DOCS/SEC';
+  }, 4000);
+});
+</script>
+</body></html>

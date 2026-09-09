@@ -30,6 +30,9 @@ export interface Options {
   level_of_detail?: string;
   communication_objective?: string;
   content_style?: string;
+  /** Groq API parameter (not a prompt parameter) — how hard the model thinks
+   * before writing. Groq documents low|medium|high for gpt-oss-120b. */
+  reasoning_effort?: string;
 }
 
 // One deliverable inside a bundle. A failed type has `error` set and an
@@ -44,6 +47,14 @@ export interface Artifact {
   kind: string;
   image_path: string;
   image_prompt: string;
+  /** How this deliverable was actually generated. `requested` and `applied`
+   * differ only when the effort ladder downgraded mid-flight under
+   * token-budget pressure; otherwise the reason is empty. */
+  reasoning_requested?: string;
+  reasoning_applied?: string;
+  reasoning_downgrade_reason?: string;
+  /** Chunks the source was split into; 0/absent when it fit one pass. */
+  source_chunks?: number;
 }
 
 export interface Bundle {

@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import Home from "./pages/Home";
 import Transform from "./pages/Transform";
+import AuthPage from "./pages/AuthPage";
 
 /** Landing-page anchor sections, in document order. Shared by the header's
  * nav, the scrollspy, and the hash-scroll handler so the three can never
@@ -10,8 +13,9 @@ export const SECTION_IDS = ["product", "case-studies", "contact"] as const;
 export type SectionId = (typeof SECTION_IDS)[number];
 
 const TITLES: Record<string, string> = {
-  "/": "Intelligence Designed To Evolve",
+  "/": "Transform Console — Content Transformation Engine",
   "/transform": "Transform Console",
+  "/auth": "Sign In",
 };
 
 /** Per-route document.title, so tabs and history entries are distinguishable.
@@ -90,14 +94,24 @@ function HashScroll() {
 export default function App() {
   return (
     <BrowserRouter>
-      <RouteTitle />
-      <HashScroll />
-      <Routes>
-        <Route path="/transform" element={<Transform />} />
-        {/* Catch-all: any unknown path renders the landing page rather than
-            a blank screen. */}
-        <Route path="*" element={<Home />} />
-      </Routes>
+      <AuthProvider>
+        <RouteTitle />
+        <HashScroll />
+        <Routes>
+          <Route path="/auth" element={<AuthPage />} />
+          <Route
+            path="/transform"
+            element={
+              <ProtectedRoute>
+                <Transform />
+              </ProtectedRoute>
+            }
+          />
+          {/* Catch-all: any unknown path renders the landing page rather than
+              a blank screen. */}
+          <Route path="*" element={<Home />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

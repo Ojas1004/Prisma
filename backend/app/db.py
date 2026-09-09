@@ -6,7 +6,7 @@ import uuid
 import asyncpg
 
 from app import config
-from app.models import Bundle, Options, Transform
+from app.models import Bundle, Options, SavedSource, Transform
 
 _pool: asyncpg.Pool | None = None
 
@@ -168,3 +168,60 @@ async def update_output_types(transform_id: str, output_types: list[str]) -> Non
 
 async def delete_transform(transform_id: str) -> None:
     await pool().execute("DELETE FROM transforms WHERE id = $1", transform_id)
+
+
+# ── Per-user saved sources ────────────────────────────────────────────────────
+# user_id is the Supabase auth uuid; identity lives in Supabase, so it is stored
+# here as an opaque value with no foreign key. Every query filters on it — a
+# missing user_id predicate would leak one operator's sources to another.
+
+SOURCE_COLUMNS = "id, user_id, title, source_type, content_text, size_bytes, created_at"
+
+
+def _row_to_source(row: asyncpg.Record) -> SavedSource:
+    return SavedSource(
+        id=str(row["id"]),
+        title=row["title"],
+        source_type=row["source_type"],
+        content_text=row["content_text"],
+        size_bytes=row["size_bytes"] or 0,
+        created_at=row["created_at"],
+    )
+
+
+async def list_sources(user_id: str) -> list[SavedSource]:
+    rows = await pool().fetch(
+        f"SELECT {SOURCE_COLUMNS} FROM sources WHERE user_id = $1 ORDER BY created_at DESC",
+        uuid.UUID(user_id),
+    )
+    return [_row_to_source(r) for r in rows]
+
+
+async def insert_source(
+    user_id: str, title: str, source_type: str, content_text: str
+) -> SavedSource:
+    """size_bytes is computed here from the stored text — never taken from the
+    client, which could under-report it."""
+    row = await pool().fetchrow(
+        """
+        INSERT INTO sources (user_id, title, source_type, content_text, size_bytes)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING """ + SOURCE_COLUMNS,
+        uuid.UUID(user_id), title, source_type, content_text,
+        len(content_text.encode("utf-8")),
+    )
+    return _row_to_source(row)
+
+
+async def delete_source(source_id: str, user_id: str) -> bool:
+    """Ownership is enforced in the WHERE clause rather than by a read-then-check,
+    so another user's row can never be deleted even under a race. Returns False
+    when nothing matched — caller reports that as 404, not 403, so the response
+    cannot confirm that someone else's source id exists."""
+    sid = _parse_id(source_id)
+    if sid is None:
+        return False
+    result = await pool().execute(
+        "DELETE FROM sources WHERE id = $1 AND user_id = $2", sid, uuid.UUID(user_id)
+    )
+    return result != "DELETE 0"

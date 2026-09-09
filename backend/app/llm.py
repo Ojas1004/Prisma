@@ -7,6 +7,7 @@ import asyncio
 import base64
 import logging
 import re
+from dataclasses import dataclass
 
 import httpx
 
@@ -28,9 +29,31 @@ MAX_ATTEMPTS = 6
 # get truncated mid-document rather than merely being short.
 MIN_COMPLETION_TOKENS = 1500
 
+# What Groq accepts for the text model (console.groq.com/docs/reasoning).
+# The vision model takes none|default instead and is remapped in chat().
+VALID_EFFORTS = ("low", "medium", "high")
+
 
 class GroqError(Exception):
     pass
+
+
+@dataclass
+class ChatResult:
+    """A completion plus what it actually cost in effort terms.
+
+    `requested` is what the caller asked for; `applied` is the rung the
+    ladder finished on. They differ only when a downgrade happened, which
+    `downgraded` reports directly so callers don't re-derive it."""
+
+    text: str
+    requested: str
+    applied: str
+    downgrade_reason: str = ""
+
+    @property
+    def downgraded(self) -> bool:
+        return bool(self.downgrade_reason) and self.applied != self.requested
 
 
 def text_message(role: str, text: str) -> dict:
@@ -98,9 +121,15 @@ class GroqClient:
             timeout=httpx.Timeout(300.0, connect=15.0),
         )
 
-    async def chat(self, messages: list[dict], json_mode: bool = False) -> str:
+    async def chat(
+        self, messages: list[dict], json_mode: bool = False, reasoning_effort: str = ""
+    ) -> ChatResult:
         """Call the chat model (vision model when images are attached) and
-        return the assistant text."""
+        return the assistant text.
+
+        `reasoning_effort` overrides the configured default for this one call.
+        Groq documents low|medium|high for gpt-oss-120b; the vision model only
+        accepts none|default, which is handled below."""
         is_vision = _has_image_parts(messages)
         payload: dict = {
             "model": self.vision_model if is_vision else self.chat_model,
@@ -112,7 +141,9 @@ class GroqClient:
         # can exhaust it before closing the JSON document. Models disagree on
         # the accepted vocabulary, though: the vision model rejects anything
         # but "none"/"default", so send the value that model understands.
-        effort = config.GROQ_REASONING_EFFORT
+        # Per-request override wins over the server default; an unknown value
+        # is ignored rather than passed through to the API.
+        effort = reasoning_effort if reasoning_effort in VALID_EFFORTS else config.GROQ_REASONING_EFFORT
         if is_vision:
             effort = "none" if effort not in ("none", "default") else effort
         if json_mode:
@@ -126,18 +157,28 @@ class GroqClient:
         # never leave the first rung.
         ladder = {"high": ["high", "medium", "low"], "medium": ["medium", "low"]}.get(effort, [effort])
         data: dict = {}
+        applied = effort
+        downgrade_reason = ""
         for i, eff in enumerate(ladder):
             if eff:
                 payload["reasoning_effort"] = eff
             try:
                 data = await self._post("/chat/completions", payload)
+                applied = eff
                 break
             except GroqError as exc:
                 if "json_validate_failed" not in str(exc) or i == len(ladder) - 1:
                     raise
+                # The proximate trigger is a response truncated mid-JSON: the
+                # model spent its completion budget thinking. The budget is
+                # usually already shrunk by a 413 halving upstream, so the root
+                # cause is token-budget pressure on the account's tier.
+                downgrade_reason = "completion budget exhausted while reasoning"
                 log.warning(
-                    "[groq] model ran out of budget mid-document at reasoning_effort=%s — "
-                    "retrying at %s", eff, ladder[i + 1],
+                    "[groq][effort-downgrade] requested=%s from=%s to=%s reason=%s "
+                    "model=%s max_tokens=%s",
+                    effort, eff, ladder[i + 1], downgrade_reason,
+                    payload.get("model"), payload.get("max_tokens"),
                 )
         choices = data.get("choices") or []
         if not choices:
@@ -154,7 +195,12 @@ class GroqClient:
             )
         if not content:
             raise GroqError(f"empty response from {payload['model']} (finish_reason={finish_reason!r})")
-        return content
+        return ChatResult(
+            text=content,
+            requested=effort,
+            applied=applied,
+            downgrade_reason=downgrade_reason if applied != effort else "",
+        )
 
     async def _post(self, path: str, payload: dict) -> dict:
         """JSON POST with up to MAX_ATTEMPTS attempts, backing off on 429/5xx —

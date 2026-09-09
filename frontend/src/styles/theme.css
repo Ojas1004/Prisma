@@ -49,8 +49,36 @@
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
 
   /* ── Type ─────────────────────────────────────────────────
-     Inter only. The dot-matrix display face is deliberately absent:
-     it belonged to the retired TERMINAL-era system, and the new
-     landing page sets its headline in bold Inter. */
+     Inter for body/UI, Space Grotesk for display headings, JetBrains
+     Mono for the console's instrument labels. All three are loaded in
+     one request from index.html. The retired dot-matrix face is gone. */
   --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* ── Console surfaces ─────────────────────────────────────
+     The three-panel console separates its columns by elevation: the
+     centre workspace sits *lower* than the side panels, so the working
+     area recedes and the rails frame it. Distinct from --surface-*,
+     which the landing page also uses. */
+  --bg-page: #08080c;
+  --bg-panel: #0d0e14; /* Sources / Studio rails */
+  --bg-panel-alt: #0a0a10; /* centre workspace — recessed */
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  /* Violet at the tint strengths this layout needs. NOTE: --accent
+     stays #8200db (the hero's violet, already in use product-wide);
+     these are keyed off --accent-bright #a855f7, which is the value
+     the console design calls for. */
+  --accent-dim: rgba(168, 85, 247, 0.14);
+  --accent-line: rgba(168, 85, 247, 0.35);
+
+  /* Status/among-instruments cyan — the one non-violet accent. */
+  --cyan: #22d3ee;
+
+  /* Aliases so component CSS can use role names alongside the ink scale. */
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-2);
+  --text-muted: var(--ink-3);
 }

@@ -272,6 +272,12 @@ async def update_content(transform_id: str, body: UpdateContentBody):
     edited.kind = existing.kind
     edited.image_path = existing.image_path
     edited.error = existing.error
+    # Provenance of how this deliverable was generated: an edit to the text
+    # doesn't change what effort produced it.
+    edited.reasoning_requested = existing.reasoning_requested
+    edited.reasoning_applied = existing.reasoning_applied
+    edited.reasoning_downgrade_reason = existing.reasoning_downgrade_reason
+    edited.source_chunks = existing.source_chunks
 
     t.content.artifacts = [
         edited if a.output_type == edited.output_type else a for a in t.content.artifacts

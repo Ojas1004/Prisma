@@ -124,14 +124,6 @@ function StopIcon() {
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-      <path d="M7 2.5V11.5M2.5 7H11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 function CloseIcon() {
   return (
     <svg width="9" height="9" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -406,7 +398,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const [isSmoothResize, setIsSmoothResize] = useState(false);
     const [localValue, setLocalValue] = useState(defaultValue);
     const [localEffortIndex, setLocalEffortIndex] = useState(1);
-    const [isTypeSelectOpen, setIsTypeSelectOpen] = useState(false);
 
     const [attachments, setAttachments] = useState<Attachment[]>([]);
     const [activeAttachment, setActiveAttachment] = useState<{ attachment: Attachment; rect: DOMRect } | null>(null);
@@ -426,9 +417,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
     const rafRef = useRef<number | null>(null);
     const recognitionRef = useRef<any>(null);
 
-    const [hoverStyle, setHoverStyle] = useState({
-      opacity: 0, transform: "translateY(0px) scale(0.95)", transition: "none",
-    });
     const [containerHeight, setContainerHeight] = useState(116);
     const [textareaHeight, setTextareaHeight] = useState(68);
     const [isScrolling, setIsScrolling] = useState(false);
@@ -611,24 +599,12 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       setTimeout(updateFades, 0);
     }, [textareaHeight]);
 
-    useEffect(() => {
-      if (!isTypeSelectOpen) return;
-      const handleOutsideClick = (e: MouseEvent) => {
-        if (internalContainerRef.current && !internalContainerRef.current.contains(e.target as Node)) {
-          setIsTypeSelectOpen(false);
-        }
-      };
-      document.addEventListener("mousedown", handleOutsideClick);
-      return () => document.removeEventListener("mousedown", handleOutsideClick);
-    }, [isTypeSelectOpen]);
-
     const handleBlur = (e: React.FocusEvent<HTMLDivElement>) => {
       if (internalContainerRef.current?.contains(e.relatedTarget as Node)) return;
       if (alwaysExpanded) return;
       if (value.trim() === "" && !hasAttachments && !isRecording) {
         setIsSmoothResize(false);
         setExpanded(false);
-        setIsTypeSelectOpen(false);
       }
     };
 
@@ -636,7 +612,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       if (value.trim() === "" && !hasAttachments && !hasExternalSource) return;
       setIsSmoothResize(false);
       onSubmit?.(value, { effort: currentEffort, attachments: attachments.map((a) => a.file) });
-      setIsTypeSelectOpen(false);
       if (clearOnSubmit) {
         if (!isControlled) setLocalValue("");
         attachments.forEach((a) => URL.revokeObjectURL(a.url));
@@ -651,11 +626,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
       const next = (effortIndex + 1) % efforts.length;
       if (onEffortChange) onEffortChange(efforts[next]);
       else setLocalEffortIndex(next);
-    };
-
-    const openFileChooser = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      fileInputRef.current?.click();
     };
 
     const handleFilesChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -824,7 +794,6 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 if (e.key === "Escape" && !alwaysExpanded && value.trim() === "" && !hasAttachments) {
                   setIsSmoothResize(false);
                   setExpanded(false);
-                  setIsTypeSelectOpen(false);
                 }
               }}
               placeholder={placeholder}
@@ -881,98 +850,10 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                   : "opacity-0 blur-sm translate-y-2 pointer-events-none",
               )}
             >
-              {/* Output-type quick-add — same slot the model picker occupied */}
-              {outputTypes.length > 0 && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsTypeSelectOpen((prev) => !prev);
-                    }}
-                    className={cn(
-                      "group flex items-center gap-1 rounded-full px-2 py-1 text-foreground/50 transition-all duration-200 outline-none hover:bg-accent hover:text-foreground cursor-pointer",
-                      isTypeSelectOpen && "bg-accent text-foreground",
-                    )}
-                    aria-expanded={isTypeSelectOpen}
-                    aria-label={`Choose deliverables. ${selectedCount} selected`}
-                  >
-                    <FileText className="size-3.5 opacity-70 group-hover:opacity-100 transition-opacity" strokeWidth={2} aria-hidden="true" />
-                    <span className="text-xs font-semibold select-none">
-                      <MorphingText text={selectedCount > 0 ? `Deliverables · ${selectedCount}` : "Deliverables"} />
-                    </span>
-                  </button>
-
-                  <div
-                    style={{ transformOrigin: "bottom left" }}
-                    onMouseLeave={() => {
-                      setHoverStyle((prev) => ({
-                        ...prev,
-                        opacity: 0,
-                        transform: prev.transform.replace("scale(1)", "scale(0.95)"),
-                        transition: "opacity 0.2s ease-in, transform 0.2s ease-out",
-                      }));
-                    }}
-                    className={cn(
-                      "absolute bottom-full left-0 mb-2.5 z-50 w-56 rounded-2xl border border-border bg-card/95 p-1 shadow-xl backdrop-blur-md flex flex-col gap-0.5 transition-all duration-400 cursor-default",
-                      isTypeSelectOpen
-                        ? "opacity-100 scale-100 translate-y-0 pointer-events-auto ease-[cubic-bezier(0.34,1.56,0.64,1)]"
-                        : "opacity-0 scale-95 translate-y-3 pointer-events-none ease-[cubic-bezier(0.175,0.885,0.32,1.275)]",
-                    )}
-                  >
-                    <div className="relative flex flex-col gap-0.5">
-                      <div style={hoverStyle} className="absolute left-0 right-0 top-0 h-8 -z-10 rounded-xl bg-accent pointer-events-none" />
-                      {outputTypes.map((opt, idx) => {
-                        const checked = selectedTypes.includes(opt.type);
-                        return (
-                          <button
-                            key={opt.type}
-                            type="button"
-                            role="menuitemcheckbox"
-                            aria-checked={checked}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onMouseEnter={() => {
-                              setHoverStyle((prev) => ({
-                                opacity: 1,
-                                transform: `translateY(${idx * 34}px) scale(1)`,
-                                transition:
-                                  prev.opacity === 0
-                                    ? "opacity 0.15s ease-out"
-                                    : "transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.15s ease",
-                              }));
-                            }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleType?.(opt.type);
-                            }}
-                            className="group relative flex h-8 w-full items-center justify-between rounded-xl px-2.5 py-1.5 text-left text-xs font-medium text-foreground/80 outline-none active:scale-[0.98] cursor-pointer"
-                          >
-                            <span className="flex items-center gap-2">
-                              <TypeIcon type={opt.type} className="size-3.5 opacity-85 group-hover:opacity-100 transition-opacity" />
-                              {opt.label}
-                            </span>
-                            <span
-                              className={cn(
-                                "flex size-4 items-center justify-center rounded-[5px] border transition-all duration-150",
-                                checked ? "border-primary bg-primary" : "border-border bg-transparent",
-                              )}
-                              aria-hidden="true"
-                            >
-                              {checked && (
-                                <svg width="9" height="7" viewBox="0 0 10 8" fill="none">
-                                  <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              )}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-              )}
-
+              {/* The deliverables dropdown was removed from this row — the Studio
+                  panel is the single place output types are chosen. `onToggleType`
+                  and `selectedTypes` remain wired: the send button still shows the
+                  selected count, and the Studio panel drives the same state. */}
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
@@ -1007,16 +888,10 @@ export const PromptInput = React.forwardRef<HTMLDivElement, PromptInputProps>(
                 </button>
               )}
 
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={openFileChooser}
-                disabled={attachments.length >= maxAttachments}
-                className="ml-auto flex size-7 items-center justify-center rounded-full text-foreground/50 transition-all duration-200 hover:bg-accent hover:text-foreground outline-none cursor-pointer disabled:opacity-40 disabled:pointer-events-none"
-                aria-label="Attach image"
-              >
-                <PlusIcon />
-              </button>
+              {/* The "+" attach shortcut was removed from this row. Images are
+                  added through the Sources panel instead. The attachment
+                  machinery below is intentionally retained — `onSubmit` still
+                  reports `meta.attachments`, which runTransform consumes. */}
             </div>
 
             {/* Audio visualiser */}

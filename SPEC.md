@@ -440,6 +440,34 @@ pypdf, `image` attached as a data-URI part (Groq vision model auto-selected).
       FastAPI's subclass silently rejected every real upload — now checks the
       Starlette class
 
+- [x] **HUD landing page (Stitch mockup port, owner-inserted task):** the
+      logged-out marketing page at `/` rebuilt as real React components
+      (`components/landing/`: LandingHeader, TelemetryStrip, HeroSection,
+      StudioMatrixSection, PipelineSection, DifferentiatorsSection,
+      CaseStudiesStrip, CTADock, LandingFooter) on the existing hud-* tokens +
+      lucide icons; all interactions are React state with cleanup; telemetry/
+      dispatch are commented as fabricated decoration and NOT wired to the
+      backend; CTAs route to /transform. Overclaiming copy corrected against
+      this document (real ingestion formats, 6 calibration axes matching §7,
+      no invented benchmark/guarantee/webhook claims). Old galaxy-hero landing
+      deleted: `ui/galaxy-interactive-hero-section.tsx`, `components/Orb/`,
+      `components/showcase/`, `SiteHeader.tsx`, `styles/header.css`, and the
+      dead `.landing-page` atmosphere block in theme.css; `ogl` and
+      `@splinetool/react-spline` dropped from package.json as orphaned
+
+- [x] **Per-user source persistence (owner-inserted task):** `sources` table
+      added to `migrations/init.sql` (user_id = Supabase uuid, no FK — identity
+      lives in Supabase; index on `(user_id, created_at DESC)`) and applied to
+      the live volume by hand, since init.sql only runs on a fresh container.
+      `app/sources_routes.py` exposes GET/POST/DELETE `/api/sources` plus
+      `POST /api/sources/upload`, every route behind `get_current_user_id`;
+      ownership is enforced in the DELETE's WHERE clause and a foreign row
+      returns 404, never 403. Frontend: Transform.tsx loads per user (keyed on
+      `user.id`, cleared on sign-out), SourcesPanel gained loading/error states
+      and a real byte-summed STORAGE readout. **Images stay session-only** —
+      they have no text to persist; documents are text-extracted server-side at
+      save time so a PDF survives re-login without re-upload
+
 ### Not done — pending work, in order
 
 4. **File split (Task 4 prep):** rename `generators/text.py` →

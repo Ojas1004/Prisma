@@ -1,43 +1,37 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  FileText,
-  FileType,
-  Image as ImageIcon,
-  PanelLeftClose,
-  PanelLeftOpen,
-  PanelRightClose,
-  PanelRightOpen,
-  Plus,
-  Trash2,
-  X,
-} from "lucide-react";
-import SiteHeader from "../components/SiteHeader";
-import { PromptInput, TypeIcon } from "@/components/ui/ai-chat-input";
+import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { HudHeader } from "@/components/console/HudHeader";
+import { SourcesPanel } from "@/components/console/SourcesPanel";
+import { StudioPanel } from "@/components/console/StudioPanel";
+import { TransformConsole } from "@/components/console/TransformConsole";
+import { AddSourceModal } from "@/components/console/AddSourceModal";
+import { CalibrationPopover } from "@/components/console/CalibrationPopover";
+import type {
+  SourceDraft,
+  SourceItem,
+  StudioOutput,
+  Turn,
+  TypeState,
+} from "@/components/console/types";
 import {
   connectStream,
+  createSource,
   deleteArtifact,
+  deleteSource,
   deleteTransform,
-  exportUrl,
   getOutputTypes,
   getTransform,
+  listSources,
   retryTransform,
   startTransform,
+  uploadSource,
+  type SavedSource,
 } from "../lib/api";
-import type {
-  Artifact,
-  OutputTypeInfo,
-  ParameterInfo,
-  SSEEvent,
-  Transform as TransformRow,
-} from "../lib/types";
+import { useAuth } from "@/contexts/AuthContext";
+import type { OutputTypeInfo, ParameterInfo, SSEEvent } from "../lib/types";
 import "../styles/console.css";
-
-type TurnPhase = "generating" | "done" | "failed";
-type TypeState = "pending" | "running" | "ok" | "err";
-type SourceKind = "text" | "pdf" | "image";
-
-const DETAIL_LEVELS = ["Brief", "Standard", "Comprehensive"];
+import "../styles/hud.css";
 
 // Select params start on sensible middles; free-text params start empty.
 const PARAM_DEFAULTS: Record<string, string> = {
@@ -45,46 +39,12 @@ const PARAM_DEFAULTS: Record<string, string> = {
   language: "English",
   level_of_detail: "standard",
   content_style: "factual",
-};
-
-// Distinct glyph per state so status never depends on colour alone.
-const STATUS: Record<TypeState, { glyph: string; className: string; label: string }> = {
-  pending: { glyph: "", className: "is-pending", label: "Queued" },
-  running: { glyph: "", className: "is-running", label: "Generating…" },
-  ok: { glyph: "✓", className: "is-ok", label: "Complete" },
-  err: { glyph: "!", className: "is-err", label: "Failed" },
+  // Matches the backend's configured default (GROQ_REASONING_EFFORT), so the
+  // control changes nothing for operators who never touch it.
+  reasoning_effort: "high",
 };
 
 const EASE = [0.22, 1, 0.36, 1] as const;
-const PREVIEW_LIMIT = 280;
-
-/** One item in the Sources panel. Checked sources feed the next run. */
-interface SourceItem {
-  id: string;
-  kind: SourceKind;
-  title: string;
-  text: string;
-  file: File | null;
-  checked: boolean;
-}
-
-/** One submission and its outcome — a user request plus the assistant
- * response that answers it. The Chat panel is this list, oldest first;
- * turns are only ever appended or updated in place, never replaced. */
-interface Turn {
-  id: string; // local id — exists before the backend assigns one
-  transformId: string; // backend id, "" until /start resolves
-  submittedAt: string;
-  sourcePreview: string;
-  sourceLabels: string[];
-  deliverables: string[];
-  parameters: Record<string, string>;
-  phase: TurnPhase;
-  typeStates: Record<string, TypeState>;
-  log: string[];
-  error: string;
-  result: TransformRow | null;
-}
 
 function useNarrow() {
   const [narrow, setNarrow] = useState(
@@ -105,6 +65,7 @@ export default function Transform() {
   const [outputTypes, setOutputTypes] = useState<OutputTypeInfo[]>([]);
   const [parameters, setParameters] = useState<ParameterInfo[]>([]);
   const [loadError, setLoadError] = useState("");
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
 
   // composer + shared selection state
   const [text, setText] = useState("");
@@ -112,9 +73,15 @@ export default function Transform() {
   const [params, setParams] = useState<Record<string, string>>(PARAM_DEFAULTS);
   const [calibOpen, setCalibOpen] = useState(false);
 
-  // sources panel
+  // sources panel — persisted per user in our own Postgres, keyed on the
+  // Supabase user id. `sourcesLoading` covers the initial fetch so the panel
+  // shows a loading state rather than flashing "no sources" first.
   const [sources, setSources] = useState<SourceItem[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [sourcesLoading, setSourcesLoading] = useState(true);
+  const [sourcesError, setSourcesError] = useState("");
+  const { user, session } = useAuth();
+  const token = session?.access_token ?? "";
 
   // panel chrome
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
@@ -131,8 +98,12 @@ export default function Transform() {
   const pendingScroll = useRef<{ id: string; follow: boolean } | null>(null);
 
   useEffect(() => {
+    // The round trip doubles as the header's LATENCY readout — a real
+    // measurement of this API, not decorative telemetry.
+    const t0 = performance.now();
     getOutputTypes()
       .then(({ output_types, parameters }) => {
+        setLatencyMs(Math.round(performance.now() - t0));
         setOutputTypes(output_types);
         setParameters(parameters);
       })
@@ -141,6 +112,50 @@ export default function Transform() {
       );
     return () => closeStream.current();
   }, []);
+
+  /** Saved rows carry text, never a File — a persisted document was already
+   * text-extracted server-side at save time, so it feeds a run the same way a
+   * pasted source does. */
+  const toSourceItem = (s: SavedSource): SourceItem => ({
+    id: s.id,
+    kind: s.source_type === "image" ? "image" : s.source_type === "pdf" ? "pdf" : "text",
+    title: s.title,
+    text: s.content_text,
+    file: null,
+    checked: true,
+    sizeBytes: s.size_bytes,
+  });
+
+  // Load this user's sources, and clear them the moment the session ends —
+  // keyed on user.id so switching accounts refetches rather than showing the
+  // previous operator's list. Signing out empties the panel immediately
+  // instead of waiting for a fetch that will never come.
+  useEffect(() => {
+    if (!user || !token) {
+      setSources([]);
+      setSourcesLoading(false);
+      setSourcesError("");
+      return;
+    }
+    let cancelled = false;
+    setSourcesLoading(true);
+    setSourcesError("");
+    listSources(token)
+      .then((rows) => {
+        if (cancelled) return;
+        setSources(rows.map(toSourceItem));
+      })
+      .catch((err) => {
+        if (!cancelled) setSourcesError((err as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setSourcesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, token]);
 
   // One Escape handler for every transient layer, topmost first.
   useEffect(() => {
@@ -160,7 +175,11 @@ export default function Transform() {
   );
 
   const paramLabel = useCallback(
-    (key: string) => parameters.find((p) => p.key === key)?.label ?? key.replace(/_/g, " "),
+    (key: string) => {
+      // Not in the backend registry — it is an API parameter, not a prompt one.
+      if (key === "reasoning_effort") return "Reasoning effort";
+      return parameters.find((p) => p.key === key)?.label ?? key.replace(/_/g, " ");
+    },
     [parameters],
   );
 
@@ -281,21 +300,18 @@ export default function Transform() {
   const canSubmit = !isRunning && selected.length > 0 && hasSubmittable;
 
   /** Maps composer text + checked sources onto the unchanged single-source
-   * backend API: a composer attachment or checked file source wins (one file
-   * per run); otherwise checked text sources are concatenated; a bare
-   * composer message with nothing checked runs as a free-form prompt. */
-  async function runTransform(composerText: string, attachments: File[]) {
-    if (!canSubmit && !(attachments.length > 0 && selected.length > 0 && !isRunning)) return;
+   * backend API: a checked file source wins (one file per run); otherwise
+   * checked text sources are concatenated; a bare composer message with
+   * nothing checked runs as a free-form prompt. */
+  async function runTransform(composerText: string) {
+    if (!canSubmit) return;
 
-    const attachment = attachments[0] ?? null;
-    const fileSource = attachment ? null : (checkedSources.find((s) => s.file) ?? null);
-    const file = attachment ?? fileSource?.file ?? null;
+    const fileSource = checkedSources.find((s) => s.file) ?? null;
+    const file = fileSource?.file ?? null;
     const sourceKind: "text" | "prompt" | "pdf" | "image" = file
-      ? attachment
-        ? "image"
-        : fileSource!.kind === "text"
-          ? "pdf"
-          : (fileSource!.kind as "pdf" | "image")
+      ? fileSource!.kind === "text"
+        ? "pdf"
+        : (fileSource!.kind as "pdf" | "image")
       : checkedSources.some((s) => s.text.trim() !== "")
         ? "text"
         : "prompt";
@@ -306,10 +322,7 @@ export default function Transform() {
     if (composerText.trim()) textParts.push(composerText.trim());
     const bodyText = textParts.join("\n\n");
 
-    const sourceLabels = [
-      ...(attachment ? [attachment.name] : []),
-      ...checkedSources.map((s) => s.title),
-    ];
+    const sourceLabels = checkedSources.map((s) => s.title);
 
     const localId = crypto.randomUUID();
     const turn: Turn = {
@@ -342,6 +355,11 @@ export default function Transform() {
     } catch (err) {
       updateTurn(localId, (t) => ({ ...t, phase: "failed", error: (err as Error).message }));
     }
+  }
+
+  function exec() {
+    setCalibOpen(false);
+    void runTransform(text);
   }
 
   async function onRetry(turn: Turn, types: string[]) {
@@ -383,239 +401,232 @@ export default function Transform() {
     }
   }
 
-  const detailLabel =
-    DETAIL_LEVELS.find((d) => d.toLowerCase() === (params.level_of_detail ?? "")) ?? "Standard";
   const runningTypes = runningTurn ? Object.keys(runningTurn.typeStates) : [];
   const doneCount = runningTypes.filter((t) =>
     ["ok", "err"].includes(runningTurn?.typeStates[t] ?? ""),
   ).length;
   const runPct = runningTypes.length ? Math.round((doneCount / runningTypes.length) * 100) : 0;
 
+  // HUD status line: idle → buffering (composer holds text) → running.
+  const composing = text.trim().length > 0;
+  const statusBadge = isRunning
+    ? `[ TRANSFORM // ${runPct}% ]`
+    : composing
+      ? "[ BUFFERING // INGESTING ]"
+      : "[ SYS_IDLE // READY ]";
+  const statusHot = isRunning || composing;
+
   // Studio output: one entry per successful artifact across the session.
-  const studioOutputs = turns.flatMap((t) =>
+  const studioOutputs: StudioOutput[] = turns.flatMap((t) =>
     (t.result?.content?.artifacts ?? [])
       .filter((a) => !a.error)
-      .map((a) => ({ turnId: t.id, type: a.output_type, title: a.title || labelFor(a.output_type) })),
+      .map((a) => ({
+        turnId: t.id,
+        type: a.output_type,
+        title: a.title || labelFor(a.output_type),
+        // Only set when the ladder actually stepped down; absent otherwise,
+        // so the indicator stays invisible on normal runs.
+        downgradedTo: a.reasoning_downgrade_reason ? (a.reasoning_applied ?? "") : "",
+        // Same digest served every deliverable in a multi-select run, so
+        // every row reports the same count — chunking happened once.
+        chunkedInto: a.source_chunks ?? 0,
+      })),
   );
+
+  /** Persist a new source, then append the row the server returned — the
+   * generated id and created_at come from the database, so local state matches
+   * what a reload would fetch without re-listing the whole collection. */
+  async function addSource(draft: SourceDraft) {
+    if (!token) {
+      setSourcesError("Not signed in — sources cannot be saved");
+      return;
+    }
+    setAddOpen(false);
+    setSourcesError("");
+
+    // An image has no text to persist — it is sent to the vision model as
+    // pixels at run time. Keep it in the panel for this session only.
+    const imageFile = draft.kind === "image" ? draft.file : null;
+    if (imageFile) {
+      setSources((prev) => [
+        {
+          id: crypto.randomUUID(),
+          kind: "image",
+          title: draft.title,
+          text: "",
+          file: imageFile,
+          checked: true,
+          sizeBytes: imageFile.size,
+        },
+        ...prev,
+      ]);
+      return;
+    }
+
+    try {
+      const saved = draft.file
+        ? await uploadSource(token, draft.file, draft.title)
+        : await createSource(token, {
+            title: draft.title,
+            source_type: "text",
+            content_text: draft.text,
+          });
+      setSources((prev) => [toSourceItem(saved), ...prev]);
+    } catch (err) {
+      setSourcesError((err as Error).message);
+    }
+  }
+
+  /** Delete server-side first; only drop it from the panel once the row is
+   * actually gone, so a failed delete doesn't hide a source that still exists. */
+  async function removeSource(id: string) {
+    // Session-only image rows were never persisted, so there is nothing to
+    // delete server-side — drop them locally.
+    const item = sources.find((s) => s.id === id);
+    if (!token || (item && item.kind === "image" && item.file)) {
+      setSources((prev) => prev.filter((s) => s.id !== id));
+      return;
+    }
+    setSourcesError("");
+    try {
+      await deleteSource(token, id);
+      setSources((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setSourcesError((err as Error).message);
+    }
+  }
 
   const panelTransition = reduceMotion ? { duration: 0 } : { duration: 0.4, ease: EASE };
 
-  const sourcesPanel = (
+  const sourcesPanel = (onCollapse: () => void) => (
     <SourcesPanel
       sources={sources}
+      loading={sourcesLoading}
+      error={sourcesError}
       onAdd={() => setAddOpen(true)}
       onToggle={(id) =>
         setSources((prev) => prev.map((s) => (s.id === id ? { ...s, checked: !s.checked } : s)))
       }
       onToggleAll={(checked) => setSources((prev) => prev.map((s) => ({ ...s, checked })))}
-      onDelete={(id) => setSources((prev) => prev.filter((s) => s.id !== id))}
+      onDelete={removeSource}
+      onCollapse={onCollapse}
     />
   );
 
-  const studioPanel = (
+  const studioPanel = (onCollapse: () => void) => (
     <StudioPanel
       outputTypes={outputTypes}
       selected={selected}
       onToggleType={toggleType}
       outputs={studioOutputs}
       onOpenOutput={scrollToTurn}
+      onCollapse={onCollapse}
     />
   );
 
+  const railClasses =
+    "flex-1 min-h-0 bg-hud-surface rounded-lg border border-hud-border flex flex-col items-center pt-3 shadow-2xl";
+  const railBtnClasses =
+    "text-slate-500 hover:text-cyan-300 p-1.5 hover:bg-slate-800/40 rounded transition";
+
   return (
-    <div className="console-page">
-      <div className="nb-shell">
-        {/* No landing section is in view here, so nothing reads as current. */}
-        <SiteHeader />
+    <div className="console-page hud-page">
+      <HudHeader />
 
-        <div className="nb-panels">
-          {/* ── Sources ─────────────────────────────────────── */}
-          {!narrow && (
-            <motion.aside
-              className="nb-col nb-col--sources"
-              animate={{ width: sourcesCollapsed ? 64 : 292 }}
-              initial={false}
-              transition={panelTransition}
-            >
-              {sourcesCollapsed ? (
-                <div className="panel-card panel-card--rail">
-                  <button
-                    className="icon-btn"
-                    type="button"
-                    onClick={() => setSourcesCollapsed(false)}
-                    aria-label="Expand sources panel"
-                    aria-expanded={false}
-                  >
-                    <PanelLeftOpen size={17} aria-hidden="true" />
-                  </button>
-                </div>
-              ) : (
-                <div className="panel-card">
-                  <div className="panel-head">
-                    <span className="eyebrow">Sources</span>
-                    <button
-                      className="icon-btn"
-                      type="button"
-                      onClick={() => setSourcesCollapsed(true)}
-                      aria-label="Collapse sources panel"
-                      aria-expanded={true}
-                    >
-                      <PanelLeftClose size={17} aria-hidden="true" />
-                    </button>
-                  </div>
-                  {sourcesPanel}
-                </div>
-              )}
-            </motion.aside>
-          )}
-
-          {/* ── Chat ────────────────────────────────────────── */}
-          <main className="nb-col nb-col--chat">
-            <div className="chat-head">
-              {narrow && (
+      <main className="flex-1 min-h-0 flex overflow-hidden p-3 sm:p-5 gap-3 sm:gap-5">
+        {/* ── Sources ─────────────────────────────────────── */}
+        {!narrow && (
+          <motion.aside
+            className="flex flex-col shrink-0 min-h-0"
+            animate={{ width: sourcesCollapsed ? 64 : 320 }}
+            initial={false}
+            transition={panelTransition}
+          >
+            {sourcesCollapsed ? (
+              <div className={railClasses}>
                 <button
-                  className="icon-btn"
+                  className={railBtnClasses}
                   type="button"
-                  onClick={() => setDrawer("sources")}
-                  aria-label="Open sources panel"
+                  onClick={() => setSourcesCollapsed(false)}
+                  aria-label="Expand sources panel"
+                  aria-expanded={false}
                 >
                   <PanelLeftOpen size={17} aria-hidden="true" />
                 </button>
+              </div>
+            ) : (
+              sourcesPanel(() => setSourcesCollapsed(true))
+            )}
+          </motion.aside>
+        )}
+
+        {/* ── Console ─────────────────────────────────────── */}
+        <TransformConsole
+          statusBadge={statusBadge}
+          statusHot={statusHot}
+          latencyMs={latencyMs}
+          loadError={loadError}
+          turns={turns}
+          isRunning={isRunning}
+          reduceMotion={!!reduceMotion}
+          labelFor={labelFor}
+          paramLabel={paramLabel}
+          onRetry={onRetry}
+          onRemove={onRemove}
+          onDeleteJob={onDeleteJob}
+          threadRef={threadRef}
+          setTurnRef={(id, el) => {
+            turnRefs.current[id] = el;
+          }}
+          text={text}
+          onTextChange={setText}
+          canSubmit={canSubmit}
+          onExec={exec}
+          calibrateOpen={calibOpen}
+          onToggleCalibrate={() => setCalibOpen((v) => !v)}
+          calibration={
+            <AnimatePresence>
+              {calibOpen && (
+                <CalibrationPopover
+                  parameters={parameters}
+                  params={params}
+                  setParams={setParams}
+                  onClose={() => setCalibOpen(false)}
+                  reduceMotion={!!reduceMotion}
+                />
               )}
-              <h1 className="chat-title">Transform Console</h1>
-              {narrow && (
+            </AnimatePresence>
+          }
+          onOpenSources={narrow ? () => setDrawer("sources") : undefined}
+          onOpenStudio={narrow ? () => setDrawer("studio") : undefined}
+        />
+
+        {/* ── Studio ──────────────────────────────────────── */}
+        {!narrow && (
+          <motion.aside
+            className="flex flex-col shrink-0 min-h-0"
+            animate={{ width: studioCollapsed ? 64 : 320 }}
+            initial={false}
+            transition={panelTransition}
+          >
+            {studioCollapsed ? (
+              <div className={railClasses}>
                 <button
-                  className="icon-btn"
+                  className={railBtnClasses}
                   type="button"
-                  onClick={() => setDrawer("studio")}
-                  aria-label="Open studio panel"
+                  onClick={() => setStudioCollapsed(false)}
+                  aria-label="Expand studio panel"
+                  aria-expanded={false}
                 >
                   <PanelRightOpen size={17} aria-hidden="true" />
                 </button>
-              )}
-            </div>
-
-            {loadError && (
-              <div className="console-card console-card--alert" style={{ marginBottom: 12 }}>
-                <p className="error-note">{loadError}</p>
               </div>
+            ) : (
+              studioPanel(() => setStudioCollapsed(true))
             )}
-
-            <div className="nb-thread" ref={threadRef} aria-label="Transform history">
-              {turns.length === 0 ? (
-                <p className="thread-empty">Your transforms will appear here.</p>
-              ) : (
-                turns.map((turn) => (
-                  <motion.article
-                    className="turn"
-                    key={turn.id}
-                    ref={(el) => {
-                      turnRefs.current[turn.id] = el;
-                    }}
-                    initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, ease: EASE }}
-                  >
-                    <UserTurn turn={turn} labelFor={labelFor} paramLabel={paramLabel} />
-                    <AssistantTurn
-                      turn={turn}
-                      labelFor={labelFor}
-                      isRunning={isRunning}
-                      onRetry={onRetry}
-                      onRemove={onRemove}
-                      onDeleteJob={onDeleteJob}
-                    />
-                  </motion.article>
-                ))
-              )}
-            </div>
-
-            {/* ── Composer ──────────────────────────────────── */}
-            <div className="nb-composer">
-              <AnimatePresence>
-                {calibOpen && (
-                  <CalibrationPopover
-                    parameters={parameters}
-                    params={params}
-                    setParams={setParams}
-                    onClose={() => setCalibOpen(false)}
-                    reduceMotion={!!reduceMotion}
-                  />
-                )}
-              </AnimatePresence>
-              <PromptInput
-                alwaysExpanded
-                value={text}
-                onChange={setText}
-                placeholder={
-                  checkedSources.length > 0
-                    ? "Add instructions for the checked sources (optional)…"
-                    : "Paste source content or describe what you need…"
-                }
-                outputTypes={outputTypes.map((t) => ({ type: t.type, label: t.label }))}
-                selectedTypes={selected}
-                onToggleType={toggleType}
-                efforts={DETAIL_LEVELS}
-                effort={detailLabel}
-                onEffortChange={(label) =>
-                  setParams((prev) => ({ ...prev, level_of_detail: label.toLowerCase() }))
-                }
-                onSubmit={(value, meta) => {
-                  setCalibOpen(false);
-                  void runTransform(value, meta.attachments);
-                }}
-                clearOnSubmit
-                canSubmit={canSubmit}
-                isRunning={isRunning}
-                runProgress={runPct}
-                hasExternalSource={checkedSources.length > 0}
-                onOpenCalibration={() => setCalibOpen((v) => !v)}
-                calibrationOpen={calibOpen}
-              />
-            </div>
-          </main>
-
-          {/* ── Studio ──────────────────────────────────────── */}
-          {!narrow && (
-            <motion.aside
-              className="nb-col nb-col--studio"
-              animate={{ width: studioCollapsed ? 64 : 344 }}
-              initial={false}
-              transition={panelTransition}
-            >
-              {studioCollapsed ? (
-                <div className="panel-card panel-card--rail">
-                  <button
-                    className="icon-btn"
-                    type="button"
-                    onClick={() => setStudioCollapsed(false)}
-                    aria-label="Expand studio panel"
-                    aria-expanded={false}
-                  >
-                    <PanelRightOpen size={17} aria-hidden="true" />
-                  </button>
-                </div>
-              ) : (
-                <div className="panel-card">
-                  <div className="panel-head">
-                    <span className="eyebrow">Studio</span>
-                    <button
-                      className="icon-btn"
-                      type="button"
-                      onClick={() => setStudioCollapsed(true)}
-                      aria-label="Collapse studio panel"
-                      aria-expanded={true}
-                    >
-                      <PanelRightClose size={17} aria-hidden="true" />
-                    </button>
-                  </div>
-                  {studioPanel}
-                </div>
-              )}
-            </motion.aside>
-          )}
-        </div>
-      </div>
+          </motion.aside>
+        )}
+      </main>
 
       {/* ── Mobile drawers ──────────────────────────────────── */}
       <AnimatePresence>
@@ -639,20 +650,9 @@ export default function Transform() {
               exit={{ x: drawer === "sources" ? "-108%" : "108%" }}
               transition={reduceMotion ? { duration: 0 } : { duration: 0.34, ease: EASE }}
             >
-              <div className="panel-card panel-card--drawer">
-                <div className="panel-head">
-                  <span className="eyebrow">{drawer === "sources" ? "Sources" : "Studio"}</span>
-                  <button
-                    className="icon-btn"
-                    type="button"
-                    onClick={() => setDrawer(null)}
-                    aria-label="Close panel"
-                  >
-                    <X size={17} aria-hidden="true" />
-                  </button>
-                </div>
-                {drawer === "sources" ? sourcesPanel : studioPanel}
-              </div>
+              {drawer === "sources"
+                ? sourcesPanel(() => setDrawer(null))
+                : studioPanel(() => setDrawer(null))}
             </motion.div>
           </>
         )}
@@ -664,551 +664,10 @@ export default function Transform() {
           <AddSourceModal
             reduceMotion={!!reduceMotion}
             onClose={() => setAddOpen(false)}
-            onAdd={(item) => {
-              setSources((prev) => [...prev, item]);
-              setAddOpen(false);
-            }}
+            onAdd={addSource}
           />
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-/* ── Sources panel body ─────────────────────────────────────── */
-
-function SourceRowIcon({ kind }: { kind: SourceKind }) {
-  if (kind === "image") return <ImageIcon size={15} strokeWidth={2} aria-hidden="true" />;
-  if (kind === "pdf") return <FileType size={15} strokeWidth={2} aria-hidden="true" />;
-  return <FileText size={15} strokeWidth={2} aria-hidden="true" />;
-}
-
-function SourcesPanel({
-  sources,
-  onAdd,
-  onToggle,
-  onToggleAll,
-  onDelete,
-}: {
-  sources: SourceItem[];
-  onAdd: () => void;
-  onToggle: (id: string) => void;
-  onToggleAll: (checked: boolean) => void;
-  onDelete: (id: string) => void;
-}) {
-  const allChecked = sources.length > 0 && sources.every((s) => s.checked);
-  return (
-    <div className="panel-body">
-      <button className="btn-primary" type="button" onClick={onAdd}>
-        <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
-        Add sources
-      </button>
-
-      {sources.length === 0 ? (
-        <p className="panel-hint">
-          Saved sources appear here. Checked sources are included in your next transform.
-        </p>
-      ) : (
-        <>
-          <label className="src-row src-row--all">
-            <span className="src-title">Select all</span>
-            <input
-              type="checkbox"
-              checked={allChecked}
-              onChange={(e) => onToggleAll(e.target.checked)}
-              aria-label="Select all sources"
-            />
-          </label>
-          <ul className="src-list">
-            {sources.map((s) => (
-              <li key={s.id}>
-                <label className="src-row">
-                  <span className="src-icon" aria-hidden="true">
-                    <SourceRowIcon kind={s.kind} />
-                  </span>
-                  <span className="src-title">{s.title}</span>
-                  <button
-                    className="icon-btn icon-btn--sm"
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onDelete(s.id);
-                    }}
-                    aria-label={`Remove source ${s.title}`}
-                  >
-                    <Trash2 size={13} aria-hidden="true" />
-                  </button>
-                  <input
-                    type="checkbox"
-                    checked={s.checked}
-                    onChange={() => onToggle(s.id)}
-                    aria-label={`Include ${s.title}`}
-                  />
-                </label>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  );
-}
-
-/* ── Studio panel body ──────────────────────────────────────── */
-
-function StudioPanel({
-  outputTypes,
-  selected,
-  onToggleType,
-  outputs,
-  onOpenOutput,
-}: {
-  outputTypes: OutputTypeInfo[];
-  selected: string[];
-  onToggleType: (type: string) => void;
-  outputs: { turnId: string; type: string; title: string }[];
-  onOpenOutput: (turnId: string) => void;
-}) {
-  return (
-    <div className="panel-body">
-      <div className="tile-grid" role="group" aria-label="Deliverable types">
-        {outputTypes.map((t) => {
-          const on = selected.includes(t.type);
-          return (
-            <button
-              key={t.type}
-              type="button"
-              className={`tile${on ? " is-on" : ""}`}
-              onClick={() => onToggleType(t.type)}
-              aria-pressed={on}
-              title={t.description}
-            >
-              <TypeIcon type={t.type} className="tile-icon" />
-              <span className="tile-label">{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="studio-out">
-        <span className="eyebrow">Studio output</span>
-        {outputs.length === 0 ? (
-          <p className="panel-hint">Generated deliverables will be listed here.</p>
-        ) : (
-          <ul className="out-list">
-            {outputs.map((o, i) => (
-              <li key={`${o.turnId}-${o.type}-${i}`}>
-                <button className="out-row" type="button" onClick={() => onOpenOutput(o.turnId)}>
-                  <TypeIcon type={o.type} className="out-icon" />
-                  <span className="out-title">{o.title}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/* ── Calibration popover ────────────────────────────────────── */
-
-function CalibrationPopover({
-  parameters,
-  params,
-  setParams,
-  onClose,
-  reduceMotion,
-}: {
-  parameters: ParameterInfo[];
-  params: Record<string, string>;
-  setParams: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  onClose: () => void;
-  reduceMotion: boolean;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      // The toolbar toggle handles its own click; only close on true outside.
-      if (ref.current && !ref.current.contains(target) && !target.closest('[aria-label="Calibration settings"]')) {
-        onClose();
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [onClose]);
-
-  return (
-    <motion.div
-      className="calib-pop"
-      ref={ref}
-      role="dialog"
-      aria-label="Calibration settings"
-      initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 8, scale: 0.98, transition: { duration: 0.16 } }}
-      transition={{ duration: 0.3, ease: EASE }}
-    >
-      <div className="panel-head">
-        <span className="eyebrow">Calibration</span>
-        <button className="icon-btn" type="button" onClick={onClose} aria-label="Close calibration">
-          <X size={16} aria-hidden="true" />
-        </button>
-      </div>
-      <div className="param-grid">
-        {parameters.map((p) => (
-          <label className="field" key={p.key}>
-            <span className="field-label">{p.label}</span>
-            {p.kind === "select" ? (
-              <select
-                value={params[p.key] ?? ""}
-                onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: e.target.value }))}
-              >
-                <option value="">Not set</option>
-                {p.options.map((o) => (
-                  <option key={o} value={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={params[p.key] ?? ""}
-                placeholder={p.placeholder}
-                onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: e.target.value }))}
-              />
-            )}
-          </label>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
-
-/* ── Add-source modal ───────────────────────────────────────── */
-
-function AddSourceModal({
-  onAdd,
-  onClose,
-  reduceMotion,
-}: {
-  onAdd: (item: SourceItem) => void;
-  onClose: () => void;
-  reduceMotion: boolean;
-}) {
-  const [kind, setKind] = useState<SourceKind>("text");
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const needsFile = kind !== "text";
-  const valid = needsFile ? file !== null : body.trim() !== "";
-
-  function add() {
-    if (!valid) return;
-    onAdd({
-      id: crypto.randomUUID(),
-      kind,
-      title:
-        title.trim() ||
-        (needsFile ? (file?.name ?? "Untitled") : `${body.trim().slice(0, 42)}${body.trim().length > 42 ? "…" : ""}`),
-      text: needsFile ? "" : body,
-      file: needsFile ? file : null,
-      checked: true,
-    });
-  }
-
-  return (
-    <motion.div
-      className="modal-scrim"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Add a source"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.22 }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <motion.div
-        className="modal-card"
-        initial={reduceMotion ? false : { opacity: 0, y: 18, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 12, scale: 0.98, transition: { duration: 0.16 } }}
-        transition={{ duration: 0.34, ease: EASE }}
-      >
-        <div className="panel-head">
-          <span className="eyebrow">Add source</span>
-          <button className="icon-btn" type="button" onClick={onClose} aria-label="Close">
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
-
-        <label className="field">
-          <span className="field-label">Source kind</span>
-          <select value={kind} onChange={(e) => { setKind(e.target.value as SourceKind); setFile(null); }}>
-            <option value="text">Pasted text</option>
-            <option value="pdf">Document (PDF / TXT / MD)</option>
-            <option value="image">Image</option>
-          </select>
-        </label>
-
-        <label className="field">
-          <span className="field-label">Title (optional)</span>
-          <input
-            type="text"
-            value={title}
-            placeholder="e.g. IMD cyclone advisory"
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </label>
-
-        {needsFile ? (
-          <label className="field">
-            <span className="field-label">{kind === "pdf" ? "Document" : "Image"}</span>
-            <input
-              type="file"
-              accept={kind === "pdf" ? ".pdf,.txt,.md" : ".png,.jpg,.jpeg,.webp"}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-        ) : (
-          <label className="field">
-            <span className="field-label">Source content</span>
-            <textarea
-              rows={7}
-              autoFocus
-              placeholder="Paste the article, report, or advisory…"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-          </label>
-        )}
-
-        <div className="btn-row" style={{ justifyContent: "flex-end" }}>
-          <button className="btn-sm" type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn-primary" type="button" disabled={!valid} onClick={add}>
-            <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
-            Add source
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-/* ── User turn: a compact request summary, not an input replay ── */
-
-function UserTurn({
-  turn,
-  labelFor,
-  paramLabel,
-}: {
-  turn: Turn;
-  labelFor: (type: string) => string;
-  paramLabel: (key: string) => string;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const long = turn.sourcePreview.length > PREVIEW_LIMIT;
-  const shown =
-    expanded || !long
-      ? turn.sourcePreview
-      : `${turn.sourcePreview.slice(0, PREVIEW_LIMIT).trimEnd()}…`;
-  const paramEntries = Object.entries(turn.parameters);
-
-  return (
-    <div className="turn-user">
-      <div className="turn-user-head">
-        <span className="eyebrow">Request</span>
-        <span className="turn-time">{turn.submittedAt}</span>
-      </div>
-      {turn.sourceLabels.length > 0 && (
-        <div className="turn-srcs">
-          {turn.sourceLabels.map((s, i) => (
-            <span className="turn-src" key={i}>
-              {s}
-            </span>
-          ))}
-        </div>
-      )}
-      {shown && <p className="turn-preview">{shown}</p>}
-      {long && (
-        <button className="turn-more" type="button" onClick={() => setExpanded((v) => !v)}>
-          {expanded ? "Show less" : "Show more"}
-        </button>
-      )}
-      <div className="turn-tags">
-        {turn.deliverables.map((t) => (
-          <span className="turn-tag" key={t}>
-            {labelFor(t)}
-          </span>
-        ))}
-      </div>
-      {paramEntries.length > 0 && (
-        <details className="turn-params">
-          <summary>Parameters</summary>
-          <ul>
-            {paramEntries.map(([k, v]) => (
-              <li key={k}>
-                <span className="turn-param-key">{paramLabel(k)}</span> {v}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </div>
-  );
-}
-
-/* ── Assistant turn: job status + the deliverable cards ── */
-
-function AssistantTurn({
-  turn,
-  labelFor,
-  isRunning,
-  onRetry,
-  onRemove,
-  onDeleteJob,
-}: {
-  turn: Turn;
-  labelFor: (type: string) => string;
-  isRunning: boolean;
-  onRetry: (turn: Turn, types: string[]) => void;
-  onRemove: (turn: Turn, type: string) => void;
-  onDeleteJob: (turn: Turn) => void;
-}) {
-  const jobTypes = turn.result?.output_types ?? turn.deliverables;
-  const showArtifacts = turn.result?.content && turn.phase !== "generating";
-  // Actions on one turn stay quiet while another job holds the pipeline.
-  const actionsLocked = isRunning;
-
-  return (
-    <div className="turn-assistant">
-      <section className="console-card" aria-live="polite">
-        <span className="eyebrow">{turn.phase === "generating" ? "Running" : "Job status"}</span>
-        <ul className="status-list">
-          {jobTypes.map((t) => {
-            const s = STATUS[turn.typeStates[t] ?? "pending"];
-            return (
-              <li className="status-row" key={t}>
-                <span className={`status-icon ${s.className}`} aria-hidden="true">
-                  {s.glyph}
-                </span>
-                <span className="status-name">{labelFor(t)}</span>
-                <span className="status-note">{s.label}</span>
-              </li>
-            );
-          })}
-        </ul>
-        {turn.phase === "generating" && turn.log.length > 0 && (
-          <ul className="run-log">
-            {turn.log.slice(-8).map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {turn.phase === "failed" && turn.error && (
-        <section className="console-card console-card--alert" aria-live="assertive">
-          <span className="eyebrow">Job failed</span>
-          <p className="error-note">{turn.error}</p>
-          {turn.transformId && (
-            <div className="btn-row">
-              <button
-                className="btn-sm"
-                type="button"
-                disabled={actionsLocked}
-                onClick={() => onRetry(turn, [])}
-              >
-                Retry
-              </button>
-            </div>
-          )}
-        </section>
-      )}
-
-      {showArtifacts &&
-        turn.result!.content!.artifacts.map((a: Artifact) => (
-          <section
-            className={`console-card${a.error ? " console-card--alert" : ""}`}
-            key={a.output_type}
-          >
-            <div className="card-head">
-              <span className="eyebrow">{labelFor(a.output_type)}</span>
-            </div>
-
-            {a.error ? (
-              <p className="error-note">{a.error}</p>
-            ) : (
-              <>
-                {a.title && <h2 className="artifact-title">{a.title}</h2>}
-                <pre className="artifact-body">{a.body_markdown}</pre>
-                {a.highlights.length > 0 && (
-                  <ul className="highlights">
-                    {a.highlights.map((h, i) => (
-                      <li key={i}>{h}</li>
-                    ))}
-                  </ul>
-                )}
-                {Object.keys(a.metadata).length > 0 && (
-                  <p className="meta-line">
-                    {Object.entries(a.metadata)
-                      .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
-                      .join("  ·  ")}
-                  </p>
-                )}
-              </>
-            )}
-
-            <div className="btn-row">
-              <button
-                className="btn-sm"
-                type="button"
-                disabled={actionsLocked}
-                onClick={() => onRetry(turn, [a.output_type])}
-              >
-                Retry
-              </button>
-              {!a.error && (
-                <a
-                  className="btn-sm"
-                  href={exportUrl(turn.transformId || turn.result!.id, "md", a.output_type)}
-                >
-                  Export .md
-                </a>
-              )}
-              {turn.result!.content!.artifacts.length > 1 && (
-                <button
-                  className="btn-sm"
-                  type="button"
-                  disabled={actionsLocked}
-                  onClick={() => onRemove(turn, a.output_type)}
-                >
-                  Remove
-                </button>
-              )}
-            </div>
-          </section>
-        ))}
-
-      {showArtifacts && (
-        <div className="btn-row">
-          <button
-            className="btn-sm"
-            type="button"
-            disabled={actionsLocked}
-            onClick={() => onDeleteJob(turn)}
-          >
-            Delete job
-          </button>
-        </div>
-      )}
     </div>
   );
 }

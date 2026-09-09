@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-from app import config
+from app import chunking, config
 
 IMAGE_MIMES = {
     ".png": "image/png",
@@ -23,17 +23,35 @@ class ResolvedSource:
     image_mime: str = ""
     is_prompt: bool = False  # free-form operator brief rather than source material
     truncated_from: int = 0  # original char count when the source was trimmed
+    # Chunking plan for oversized sources. Built once here at ingestion so a
+    # multi-select job maps the document a single time; the runner turns it
+    # into a digest before the per-deliverable loop.
+    chunk_plan: "chunking.ChunkPlan | None" = None
 
 
 class SourceError(Exception):
     pass
 
 
+def _resolve_document(text: str) -> ResolvedSource:
+    """Size a text document against the token budget.
+
+    Chunking is the primary path for large documents: plan_chunks decides
+    whether the source fits one call or needs splitting, and raises loudly
+    when it fits neither (requirement 6 — never silently truncate). The plan
+    is built HERE, once per source, so a multi-select job does not re-chunk
+    per deliverable.
+    """
+    plan = chunking.plan_chunks(text)
+    if not plan.chunked:
+        return ResolvedSource(text=text)
+    return ResolvedSource(text=text, chunk_plan=plan)
+
+
 def truncate_source(text: str) -> tuple[str, int]:
-    """Trim source material to the prompt budget. Returns the text plus the
-    original length when trimming happened (0 otherwise). Cuts on a paragraph
-    break where possible so the model never sees half a sentence, and says so
-    inline — an unmarked cut reads as a source that simply stops."""
+    """Legacy hard trim. No longer on the document path — chunking replaced
+    it — and kept only as a backstop for callers that need a bounded string.
+    Cuts on a paragraph break where possible and says so inline."""
     limit = config.MAX_SOURCE_CHARS
     if len(text) <= limit:
         return text, 0
@@ -57,8 +75,7 @@ def truncate_source(text: str) -> tuple[str, int]:
 
 def resolve(source_kind: str, source_text: str, source_path: str) -> ResolvedSource:
     if source_kind == "text":
-        text, original = truncate_source(source_text)
-        return ResolvedSource(text=text, truncated_from=original)
+        return _resolve_document(source_text)
 
     if source_kind == "prompt":
         # A brief is the instruction itself — trimming it would change the task.
@@ -68,8 +85,7 @@ def resolve(source_kind: str, source_text: str, source_path: str) -> ResolvedSou
         text = extract_pdf_text(Path(source_path))
         if not text.strip():
             raise SourceError("no extractable text in PDF (scanned documents are not supported yet)")
-        text, original = truncate_source(text)
-        return ResolvedSource(text=text, truncated_from=original)
+        return _resolve_document(text)
 
     if source_kind == "image":
         path = Path(source_path)

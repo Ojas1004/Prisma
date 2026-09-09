@@ -66,7 +66,7 @@ class ImageGenerator(Generator):
             else:
                 messages = [llm.text_message("user", prompt)]
 
-            parsed = parse_json_object(await self.client.chat(messages, json_mode=True))
+            parsed = parse_json_object((await self.client.chat(messages, json_mode=True)).text)
             image_prompt = str(parsed.get("image_prompt", "")).strip()
             if not image_prompt:
                 raise GeneratorError("model returned an empty visual specification")
@@ -89,7 +89,7 @@ class ImageGenerator(Generator):
         )
 
     async def _render_svg(self, spec: str) -> str:
-        raw = await self.client.chat([llm.text_message("user", SVG_INSTRUCTIONS + spec)], json_mode=False)
+        raw = (await self.client.chat([llm.text_message("user", SVG_INSTRUCTIONS + spec)], json_mode=False)).text
 
         # Tolerate a fenced or prefixed response, then hard-validate the shape.
         raw = re.sub(r"^```(?:svg|xml)?\s*", "", raw.strip())

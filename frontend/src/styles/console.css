@@ -39,7 +39,7 @@
   background:
     radial-gradient(1100px 620px at 18% -10%, var(--accent-glow), transparent 62%),
     radial-gradient(900px 560px at 88% 8%, rgba(168, 85, 247, 0.09), transparent 58%),
-    var(--surface-0);
+    var(--bg-page);
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -103,13 +103,17 @@
 
 /* The only borrowed idea from the reference is the 3-column IA; the
    separation is a 1px token border, not a painted panel background. */
-.nb-col--sources { border-right: 1px solid var(--card-border); padding-right: clamp(10px, 1.2vw, 18px); }
-.nb-col--studio { border-left: 1px solid var(--card-border); padding-left: clamp(10px, 1.2vw, 18px); }
+.nb-col--sources { border-right: 1px solid var(--border); padding-right: clamp(10px, 1.2vw, 18px); }
+.nb-col--studio { border-left: 1px solid var(--border); padding-left: clamp(10px, 1.2vw, 18px); }
 
+/* The centre sits a shade *below* the rails, so the working area
+   recedes and the side panels read as framing it. */
 .nb-col--chat {
   flex: 1 1 auto;
   min-width: 0;
   padding: 0 clamp(10px, 1.6vw, 22px);
+  background: var(--bg-panel-alt);
+  border-top: 1px solid var(--border);
 }
 
 /* ── Panel cards (Sources / Studio) ───────────────────────── */
@@ -119,7 +123,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--card-bg);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
   border-radius: 20px;
   box-shadow: var(--nav-shadow);
   color: var(--field-text);
@@ -140,11 +145,15 @@
   margin-bottom: 12px;
 }
 
+/* Signature detail: every section label in the console is mono, wide-
+   tracked, and violet. Used by SOURCES / STUDIO / STUDIO OUTPUT and by
+   the per-card labels inside the thread. */
 .eyebrow {
-  color: var(--ink-3);
+  color: color-mix(in srgb, var(--accent-bright) 75%, transparent);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  font-weight: 500;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -310,12 +319,11 @@
   padding: 2px 0 10px;
 }
 
-/* Bold Inter, matching the landing headline's treatment. The dot-matrix
-   display face is gone: it belonged to the retired TERMINAL-era system. */
+/* Space Grotesk — the display face for headings. */
 .chat-title {
   margin: 0;
-  font-family: var(--font-sans);
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
   font-size: clamp(17px, 2.2vw, 24px);
   letter-spacing: -0.02em;
   color: var(--text);
@@ -340,18 +348,107 @@
   scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
 }
 
+/* ── Empty states ─────────────────────────────────────────────
+   An instrument frame rather than a sentence: four corner brackets
+   marking out the space a result will occupy. Only the brackets are
+   drawn — no outer border, no glow. */
 .thread-empty {
+  position: relative;
   margin: auto;
+  width: 340px;
+  height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
   text-align: center;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 14px;
-  letter-spacing: -0.005em;
+}
+
+.thread-empty::before,
+.thread-empty::after,
+.thread-empty > .bracket-b::before,
+.thread-empty > .bracket-b::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 0;
+  border-style: solid;
+  border-color: var(--accent-line);
+  border-width: 0;
+}
+
+/* Each corner draws exactly two sides. Note: Chromium floors fractional
+   border widths at DPR 1, so getComputedStyle reports these as 1px even
+   though 1.5px is declared — the rendered hairline is correct. */
+/* top-left */
+.thread-empty::before {
+  top: 0; left: 0;
+  border-top-width: 1.5px;
+  border-left-width: 1.5px;
+}
+/* top-right */
+.thread-empty::after {
+  top: 0; right: 0;
+  border-top-width: 1.5px;
+  border-right-width: 1.5px;
+}
+/* bottom-left */
+.thread-empty > .bracket-b::before {
+  bottom: 0; left: 0;
+  border-bottom-width: 1.5px;
+  border-left-width: 1.5px;
+}
+/* bottom-right */
+.thread-empty > .bracket-b::after {
+  bottom: 0; right: 0;
+  border-bottom-width: 1.5px;
+  border-right-width: 1.5px;
+}
+
+.empty-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.empty-dot {
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+
+.empty-sub {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
 }
 
 .nb-composer {
   position: relative;
   flex-shrink: 0;
   padding-top: 12px;
+}
+
+/* The vendored composer ships its own Tailwind focus ring
+   (focus-within:ring-1 ring-ring/20). Override it with the accent ring
+   the console design calls for — one crisp 3px halo, no blur/glow. */
+.nb-composer div[class*="bg-card"]:focus-within {
+  border-color: var(--accent-line) !important;
+  box-shadow: 0 0 0 3px var(--accent-dim) !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
 }
 
 /* ── White cards inside the thread ────────────────────────── */
@@ -617,7 +714,7 @@
   gap: 9px;
   min-height: 48px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border-strong);
   border-radius: 13px;
   background: var(--surface-1);
   color: var(--field-text);
@@ -630,15 +727,29 @@
   transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
 }
 
-.tile:hover { border-color: var(--line-strong); }
-
-.tile.is-on {
-  background: var(--accent);
-  border-color: var(--accent-bright);
-  color: #ffffff;
+.tile:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-dim);
 }
 
-.tile-icon { flex-shrink: 0; width: 15px; height: 15px; }
+/* Selected: 1.5px so the ring reads without the fill shouting. The
+   label stays light and the icon carries the accent. */
+.tile.is-on {
+  border-style: solid;
+  border-width: 1.5px;
+  border-color: var(--accent-bright);
+  background: var(--accent-dim);
+  color: var(--ink);
+}
+
+.tile-icon {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  transition: color 0.15s ease;
+}
+
+.tile.is-on .tile-icon { color: var(--accent-bright); }
 
 /* Long labels ("Executive Summary") wrap to a second line rather than
    being clipped at the card edge. */
@@ -654,6 +765,32 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Studio-output empty state: same instrument language, simpler frame. */
+.out-empty {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 22px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.out-empty-icon { color: var(--ink-3); opacity: 0.7; }
+
+.out-empty-text {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.55;
+  color: var(--text-muted);
 }
 
 .out-list {
@@ -688,7 +825,22 @@
 
 .out-row:hover { background: var(--surface-3); }
 .out-icon { flex-shrink: 0; width: 15px; height: 15px; color: var(--ink-2); }
+.out-col { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .out-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Downgrade indicator: muted metadata, deliberately NOT error-styled — the
+   ladder stepping down is expected behaviour under budget pressure, not a
+   failure. Rendered only when a downgrade actually happened. */
+.out-note {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 /* ── Calibration popover ──────────────────────────────────── */
 
@@ -711,6 +863,54 @@
   gap: 13px;
 }
 
+/* ── Reasoning effort (API parameter, in the calibration popover) ── */
+
+.calib-effort {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.effort-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--field-bg);
+}
+
+.effort-opt {
+  flex: 1;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.effort-opt:hover:not(.is-on) { background: var(--surface-3); color: var(--ink-2); }
+
+.effort-opt.is-on {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.effort-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 /* ── Fields & controls (modal + popover) ──────────────────── */
 
 .field { display: block; margin-bottom: 0; }
@@ -726,6 +926,14 @@
 
 .modal-card .field { margin-bottom: 14px; }
 .modal-card .field:last-of-type { margin-bottom: 0; }
+
+/* Inline note under a field — e.g. why images are not persisted. */
+.field-hint {
+  margin: -6px 0 14px;
+  color: var(--ink-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
 
 .console-page select,
 .console-page input[type="text"],

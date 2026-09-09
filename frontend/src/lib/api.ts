@@ -4,9 +4,16 @@ export const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, init);
-  const envelope: ApiEnvelope<T> = await res.json();
-  if (!envelope.success || envelope.data === undefined) {
-    throw new Error(envelope.error?.message ?? `Request failed: ${path} (${res.status})`);
+  // Auth rejections come from FastAPI's own HTTPException as {"detail": …},
+  // not this API's {success, data, error} envelope — so read the status first
+  // rather than failing on the missing envelope shape.
+  const body = await res.json().catch(() => null);
+  if (body && typeof body === "object" && "detail" in body) {
+    throw new Error(String((body as { detail: unknown }).detail));
+  }
+  const envelope = body as ApiEnvelope<T> | null;
+  if (!envelope || !envelope.success || envelope.data === undefined) {
+    throw new Error(envelope?.error?.message ?? `Request failed: ${path} (${res.status})`);
   }
   return envelope.data;
 }
@@ -96,4 +103,63 @@ export function connectStream(
     onError();
   };
   return () => source.close();
+}
+
+// ── Per-user saved sources ────────────────────────────────────────────────────
+// These are the only authenticated endpoints in this client: each takes the
+// caller's Supabase access token (from useAuth().session) and sends it as a
+// Bearer header, matching AuthContext.deleteAccount()'s pattern.
+
+export interface SavedSource {
+  id: string;
+  title: string;
+  source_type: string;
+  content_text: string;
+  size_bytes: number;
+  created_at: string;
+}
+
+function auth(token: string): HeadersInit {
+  return { Authorization: `Bearer ${token}` };
+}
+
+export async function listSources(token: string): Promise<SavedSource[]> {
+  const { sources } = await request<{ sources: SavedSource[] }>("/api/sources", {
+    headers: auth(token),
+  });
+  return sources;
+}
+
+export async function createSource(
+  token: string,
+  body: { title: string; source_type: string; content_text: string },
+): Promise<SavedSource> {
+  const { source } = await request<{ source: SavedSource }>("/api/sources", {
+    method: "POST",
+    headers: { ...auth(token), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return source;
+}
+
+/** Documents are uploaded rather than posted as JSON: the browser holds only a
+ * File, so the backend extracts the text (pypdf) before storing it. */
+export async function uploadSource(
+  token: string,
+  file: File,
+  title: string,
+): Promise<SavedSource> {
+  const form = new FormData();
+  form.set("file", file);
+  if (title) form.set("title", title);
+  const { source } = await request<{ source: SavedSource }>("/api/sources/upload", {
+    method: "POST",
+    headers: auth(token),
+    body: form,
+  });
+  return source;
+}
+
+export function deleteSource(token: string, id: string): Promise<{ deleted: string }> {
+  return request(`/api/sources/${id}`, { method: "DELETE", headers: auth(token) });
 }

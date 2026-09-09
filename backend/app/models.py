@@ -17,6 +17,12 @@ class Options(BaseModel):
     communication_objective: str = ""
     content_style: str = ""  # factual | analytical | narrative | persuasive
 
+    # NOT a prompt parameter — this one is passed to the Groq API itself as
+    # `reasoning_effort`, so it is deliberately excluded from
+    # Generator.parameters_block(). Groq documents low|medium|high for
+    # gpt-oss-120b; empty means "use the server default in config".
+    reasoning_effort: str = ""
+
 
 class Artifact(BaseModel):
     """One generated deliverable inside a bundle, self-identified by
@@ -29,6 +35,16 @@ class Artifact(BaseModel):
     highlights: list[str] = Field(default_factory=list)
     metadata: dict[str, str] = Field(default_factory=dict)
     error: str = ""  # per-type failure; empty = success
+    # Which reasoning effort this deliverable actually ran at. These differ
+    # only when the ladder downgraded mid-flight under token-budget pressure;
+    # the frontend shows an indicator when they do.
+    reasoning_requested: str = ""
+    reasoning_applied: str = ""
+    reasoning_downgrade_reason: str = ""
+    # How many chunks the source document was split into for this job. 0 =
+    # the source fit in one pass and no chunking happened. Every deliverable
+    # in a multi-select run carries the same value — they share one digest.
+    source_chunks: int = 0
     # Legacy image-flow fields — removal is Task 4 (with generators/image.py).
     kind: str = "text"
     image_path: str = ""
@@ -94,3 +110,25 @@ class RetryBody(BaseModel):
     (or everything, when the whole bundle already succeeded)."""
 
     output_types: list[str] = Field(default_factory=list)
+
+
+class SavedSource(BaseModel):
+    """One persisted item from the Sources panel. Scoped to a user in the
+    database; user_id is never returned — the caller only ever sees their own."""
+
+    id: str
+    title: str
+    source_type: str
+    content_text: str
+    size_bytes: int
+    created_at: datetime
+
+
+class CreateSourceBody(BaseModel):
+    """JSON body for a pasted-text source. Documents come as multipart to
+    /api/sources/upload instead, so their text is extracted server-side.
+    size_bytes is deliberately absent — the server computes it."""
+
+    title: str = ""
+    source_type: str = "text"
+    content_text: str

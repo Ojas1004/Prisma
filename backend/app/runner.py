@@ -6,8 +6,9 @@ still completes if at least one type succeeds."""
 
 import asyncio
 import logging
+from dataclasses import replace
 
-from app import config, db, sources
+from app import config, db, digest, sources
 from app.generators import Generator, Progress, Request
 from app.models import Artifact, Bundle, SSEEvent, Transform
 from app.sse import hub
@@ -19,9 +20,13 @@ JOB_TIMEOUT_SECONDS = 900
 
 
 class Runner:
-    def __init__(self, registry: dict[str, Generator], model: str) -> None:
+    def __init__(self, registry: dict[str, Generator], model: str, client=None) -> None:
         self.registry = registry
         self.model = model
+        # The map step calls Groq directly (not through a generator), so the
+        # runner needs the client. Falls back to any generator's client so
+        # existing construction sites keep working.
+        self.client = client or next(iter(registry.values())).client
         self._tasks: set[asyncio.Task] = set()
 
     def start(self, transform_id: str, retry_types: list[str] | None = None) -> None:
@@ -92,11 +97,27 @@ class Runner:
             await self._fail(transform_id, "reading_source", str(exc))
             return
 
-        if resolved.truncated_from:
+        # ── Chunk + map/reduce (ONCE per source, not per deliverable) ─────
+        # A multi-select job maps the document a single time here; every
+        # deliverable below then generates from the same reduced digest.
+        chunk_count = 0
+        if resolved.chunk_plan and resolved.chunk_plan.chunked:
+            plan = resolved.chunk_plan
+            chunk_count = plan.count
             await progress(
-                "reading_source",
-                f"Source trimmed to fit the model budget "
-                f"({len(resolved.text):,} of {resolved.truncated_from:,} characters used)",
+                "chunking",
+                f"Document is large (~{plan.total_tokens:,} tokens) — "
+                f"chunked into {plan.count} pieces",
+            )
+            try:
+                digest_text = await digest.build_digest(self.client, plan, progress)
+            except Exception as exc:  # noqa: BLE001
+                await self._fail(transform_id, "chunking", str(exc))
+                return
+            resolved = replace(resolved, text=digest_text)
+            await progress(
+                "chunking",
+                f"Chunk extraction complete — {plan.count} summaries reduced for generation",
             )
 
         # ── Generate each selected type ───────────────────────────────────
@@ -122,6 +143,9 @@ class Runner:
                     (config.DATA_DIR / "artifacts").mkdir(parents=True, exist_ok=True)
                     (config.DATA_DIR / rel_path).write_bytes(payload)
                     setattr(artifact, path_field, rel_path)
+                # Same digest served every deliverable in this job — the
+                # count is recorded per artifact so the UI can show it.
+                artifact.source_chunks = chunk_count
                 results[ot] = artifact
                 hub.publish(
                     transform_id,
