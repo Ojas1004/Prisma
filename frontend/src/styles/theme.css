@@ -16,32 +16,32 @@
   /* ── Base ─────────────────────────────────────────────────
      Near-black with a blue-violet cast, not pure #000 — the same
      base the hero's navbar sits on. */
-  --surface-0: #08080f; /* page base */
-  --surface-1: #0d0d18; /* raised: panels, cards */
-  --surface-2: #14141f; /* raised further: fields, hover wash */
-  --surface-3: #1b1b28; /* highest: popovers, active rows */
+  --surface-0: #000000; /* page base */
+  --surface-1: #0b0b0b; /* raised: panels, cards */
+  --surface-2: #141414; /* raised further: fields, hover wash */
+  --surface-3: #1a1a1a; /* highest: popovers, active rows */
 
   /* ── Accent ───────────────────────────────────────────────
      The hero's violet. `-soft` is the 16%-alpha fill used on its
      primary buttons; `-glow` tints ambient backgrounds. */
-  --accent: #8200db;
-  --accent-bright: #a855f7;
-  --accent-soft: rgba(130, 0, 219, 0.16);
-  --accent-glow: rgba(130, 0, 219, 0.13);
+  --accent: #ffffff;
+  --accent-bright: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.14);
+  --accent-glow: rgba(255, 255, 255, 0.06);
 
   /* ── Lines ────────────────────────────────────────────────
      #322D36 is the hero's button border; the translucent variants
      read correctly over any of the surface tones. */
-  --line: #322d36;
+  --line: #262626;
   --line-soft: rgba(255, 255, 255, 0.08);
   --line-strong: rgba(255, 255, 255, 0.16);
 
   /* ── Text ─────────────────────────────────────────────────
      Measured against --surface-1: primary ~16:1, secondary ~7.5:1,
      muted ~4.8:1 — all clear AA at their sizes. */
-  --ink: #f4f4f6;
-  --ink-2: #b9b9c6;
-  --ink-3: #8a8a9a;
+  --ink: #ffffff;
+  --ink-2: #d4d4d4;
+  --ink-3: #a1a1a1;
 
   /* ── Elevation ────────────────────────────────────────────
      One shadow across the product, as before — retuned for dark
@@ -68,14 +68,14 @@
   --border-strong: rgba(255, 255, 255, 0.14);
 
   /* Violet at the tint strengths this layout needs. NOTE: --accent
-     stays #8200db (the hero's violet, already in use product-wide);
-     these are keyed off --accent-bright #a855f7, which is the value
+     stays #ffffff (the landing page's white accent, used product-wide);
+     these are keyed off --accent-bright #ffffff, which is the value
      the console design calls for. */
-  --accent-dim: rgba(168, 85, 247, 0.14);
-  --accent-line: rgba(168, 85, 247, 0.35);
+  --accent-dim: rgba(255, 255, 255, 0.12);
+  --accent-line: rgba(255, 255, 255, 0.35);
 
   /* Status/among-instruments cyan — the one non-violet accent. */
-  --cyan: #22d3ee;
+  --cyan: #ffffff;
 
   /* Aliases so component CSS can use role names alongside the ink scale. */
   --text-primary: var(--ink);

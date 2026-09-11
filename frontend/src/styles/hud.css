@@ -12,14 +12,14 @@
 /* ── Page-scope re-tint ───────────────────────────────────── */
 
 .console-page.hud-page {
-  --accent: #22d3ee;
-  --accent-bright: #22d3ee;
-  --accent-soft: rgba(34, 211, 238, 0.16);
-  --accent-glow: rgba(34, 211, 238, 0.1);
-  --accent-dim: rgba(34, 211, 238, 0.14);
-  --accent-line: rgba(34, 211, 238, 0.35);
+  --accent: #ffffff;
+  --accent-bright: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.14);
+  --accent-glow: rgba(255, 255, 255, 0.06);
+  --accent-dim: rgba(255, 255, 255, 0.12);
+  --accent-line: rgba(255, 255, 255, 0.35);
   --font-sans: "Space Grotesk", "Inter", sans-serif;
-  background: #0a0a10;
+  background: #000000;
   padding: 0;
 }
 
@@ -28,15 +28,15 @@
 .hud-page .btn-primary,
 .hud-page .btn-sm:hover:not(:disabled),
 .hud-page input[type="file"]::file-selector-button {
-  color: #06222a;
+  color: #000000;
 }
 
 /* ── Grid workspace backdrop ──────────────────────────────── */
 
 .bg-hud-grid {
   background-image:
-    radial-gradient(#1e2433 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(13, 14, 20, 0.8), #0d0e14);
+    radial-gradient(#1f1f1f 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(11, 11, 11, 0.8), #0b0b0b);
   background-size:
     24px 24px,
     100% 100%;
@@ -66,12 +66,12 @@
 @keyframes bracket-breathe {
   0%,
   100% {
-    filter: drop-shadow(0 0 2px rgba(34, 211, 238, 0.3));
-    border-color: rgba(34, 211, 238, 0.85);
+    filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.3));
+    border-color: rgba(255, 255, 255, 0.85);
   }
   50% {
-    filter: drop-shadow(0 0 7px rgba(34, 211, 238, 0.75));
-    border-color: #22d3ee;
+    filter: drop-shadow(0 0 7px rgba(255, 255, 255, 0.75));
+    border-color: #ffffff;
   }
 }
 .hud-bracket-active {
@@ -86,8 +86,8 @@
   left: -1px;
   width: 10px;
   height: 10px;
-  border-top: 2px solid #22d3ee;
-  border-left: 2px solid #22d3ee;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
   transition: all 0.25s ease;
 }
 .hud-bracket-tr {
@@ -96,8 +96,8 @@
   right: -1px;
   width: 10px;
   height: 10px;
-  border-top: 2px solid #22d3ee;
-  border-right: 2px solid #22d3ee;
+  border-top: 2px solid #ffffff;
+  border-right: 2px solid #ffffff;
   transition: all 0.25s ease;
 }
 .hud-bracket-bl {
@@ -106,8 +106,8 @@
   left: -1px;
   width: 10px;
   height: 10px;
-  border-bottom: 2px solid #22d3ee;
-  border-left: 2px solid #22d3ee;
+  border-bottom: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
   transition: all 0.25s ease;
 }
 .hud-bracket-br {
@@ -116,8 +116,8 @@
   right: -1px;
   width: 10px;
   height: 10px;
-  border-bottom: 2px solid #22d3ee;
-  border-right: 2px solid #22d3ee;
+  border-bottom: 2px solid #ffffff;
+  border-right: 2px solid #ffffff;
   transition: all 0.25s ease;
 }
 
@@ -126,7 +126,7 @@
 .bracket-dim .hud-bracket-tr,
 .bracket-dim .hud-bracket-bl,
 .bracket-dim .hud-bracket-br {
-  border-color: rgba(34, 211, 238, 0.4);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 /* Large breathing brackets on the center reticle */
@@ -162,12 +162,12 @@
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(34, 211, 238, 0.2),
-    #22d3ee,
-    rgba(34, 211, 238, 0.2),
+    rgba(255, 255, 255, 0.2),
+    #ffffff,
+    rgba(255, 255, 255, 0.2),
     transparent
   );
-  box-shadow: 0 0 12px #22d3ee;
+  box-shadow: 0 0 12px #ffffff;
   animation: hud-sweep 4.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   pointer-events: none;
   z-index: 20;

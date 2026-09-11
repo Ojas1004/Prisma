@@ -54,12 +54,14 @@
 
   /* HUD console tokens (Stitch mockup port). Used by the Transform page's
      three-panel layout; the rest of the product stays on the violet theme. */
-  --color-hud-black: #07070b;
-  --color-hud-surface: #0d0e14;
-  --color-hud-elevated: #11131c;
-  --color-hud-border: #1a1d28;
-  --color-hud-divider: #161822;
-  --color-hud-cyan: #22d3ee;
+  /* Console surfaces, aligned to the landing page ramp in prisma.css:
+     pure black ground, neutral greys, white accent. */
+  --color-hud-black: #000000;
+  --color-hud-surface: #0b0b0b;
+  --color-hud-elevated: #141414;
+  --color-hud-border: #262626;
+  --color-hud-divider: #1a1a1a;
+  --color-hud-cyan: #ffffff;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   /* Display face for landing-page headlines — same stack theme.css uses
      for --font-display, exposed as a utility (font-display). */

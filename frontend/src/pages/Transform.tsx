@@ -527,7 +527,7 @@ export default function Transform() {
   const railClasses =
     "flex-1 min-h-0 bg-hud-surface rounded-lg border border-hud-border flex flex-col items-center pt-3 shadow-2xl";
   const railBtnClasses =
-    "text-slate-500 hover:text-cyan-300 p-1.5 hover:bg-slate-800/40 rounded transition";
+    "text-neutral-500 hover:text-white p-1.5 hover:bg-neutral-900/40 rounded transition";
 
   return (
     <div className="console-page hud-page">

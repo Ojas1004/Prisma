@@ -11,7 +11,7 @@ import {
 import type { SourceItem, SourceKind } from "./types";
 
 function KindIcon({ kind }: { kind: SourceKind }) {
-  const cls = "w-3.5 h-3.5 text-slate-500 shrink-0";
+  const cls = "w-3.5 h-3.5 text-neutral-500 shrink-0";
   if (kind === "image") return <ImageIcon className={cls} aria-hidden="true" />;
   if (kind === "pdf") return <FileType className={cls} aria-hidden="true" />;
   return <FileText className={cls} aria-hidden="true" />;
@@ -69,8 +69,8 @@ export function SourcesPanel({
       {/* Header */}
       <div className="px-4 py-3.5 border-b border-hud-border flex items-center justify-between bg-hud-elevated/40">
         <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-xs bg-hud-cyan shadow-[0_0_6px_#22d3ee]" />
-          <h2 className="text-xs font-mono font-semibold tracking-widest text-cyan-400 uppercase">
+          <span className="w-1.5 h-1.5 rounded-xs bg-hud-cyan shadow-[0_0_6px_#ffffff]" />
+          <h2 className="text-xs font-mono font-semibold tracking-widest text-white uppercase">
             SOURCES
           </h2>
         </div>
@@ -78,7 +78,7 @@ export function SourcesPanel({
           <button
             type="button"
             onClick={onCollapse}
-            className="text-slate-500 hover:text-slate-300 p-1 hover:bg-slate-800/40 rounded transition"
+            className="text-neutral-500 hover:text-neutral-300 p-1 hover:bg-neutral-900/40 rounded transition"
             aria-label="Collapse sources panel"
           >
             <PanelLeftClose size={16} aria-hidden="true" />
@@ -91,7 +91,7 @@ export function SourcesPanel({
         <button
           type="button"
           onClick={onAdd}
-          className="group relative w-full py-3 px-4 rounded border border-cyan-500/30 bg-cyan-500/5 hover:bg-cyan-500/10 hover:border-cyan-400 text-cyan-300 text-xs font-mono tracking-wide font-medium flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_0_12px_rgba(34,211,238,0.08)] hover:shadow-[0_0_18px_rgba(34,211,238,0.22)] active:scale-[0.98]"
+          className="group relative w-full py-3 px-4 rounded border border-white/30 bg-white/5 hover:bg-white/10 hover:border-white text-white text-xs font-mono tracking-wide font-medium flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_0_12px_rgba(255,255,255,0.08)] hover:shadow-[0_0_18px_rgba(255,255,255,0.22)] active:scale-[0.98]"
         >
           <Plus
             size={16}
@@ -100,13 +100,13 @@ export function SourcesPanel({
           />
           <span className="tracking-wider">+ Add sources</span>
         </button>
-        <div className="flex items-center justify-between text-[10px] font-mono text-slate-500 px-1 pt-1">
+        <div className="flex items-center justify-between text-[10px] font-mono text-neutral-500 px-1 pt-1">
           <span>PIPELINE BUFFER</span>
           <span
             className={`px-2 py-0.5 rounded border transition-all duration-300 ${
               checkedCount > 0
-                ? "text-cyan-300 bg-cyan-500/20 border-cyan-400"
-                : "text-cyan-400/80 bg-cyan-500/10 border-cyan-500/20"
+                ? "text-white bg-white/20 border-white"
+                : "text-white/80 bg-white/10 border-white/20"
             }`}
           >
             {checkedCount} / 16 SLOTS ACTIVE
@@ -117,7 +117,7 @@ export function SourcesPanel({
             <button
               type="button"
               onClick={() => onToggleAll(!allChecked)}
-              className="text-[10px] font-mono text-slate-500 hover:text-cyan-300 tracking-wider transition"
+              className="text-[10px] font-mono text-neutral-500 hover:text-white tracking-wider transition"
             >
               {allChecked ? "CLEAR ALL" : "SELECT ALL"}
             </button>
@@ -141,7 +141,7 @@ export function SourcesPanel({
             {sources.map((s) => (
               <li
                 key={s.id}
-                className="p-2.5 rounded bg-hud-elevated/70 border border-hud-border flex items-center justify-between text-xs font-mono transition-all duration-300 hover:border-cyan-500/40"
+                className="p-2.5 rounded bg-hud-elevated/70 border border-hud-border flex items-center justify-between text-xs font-mono transition-all duration-300 hover:border-white/40"
               >
                 <label className="flex items-center gap-2 overflow-hidden cursor-pointer">
                   <input
@@ -149,19 +149,19 @@ export function SourcesPanel({
                     checked={s.checked}
                     onChange={() => onToggle(s.id)}
                     aria-label={`Include ${s.title}`}
-                    className="rounded-sm accent-[#22d3ee] cursor-pointer"
+                    className="rounded-sm accent-[#ffffff] cursor-pointer"
                   />
                   <KindIcon kind={s.kind} />
-                  <span className="truncate text-slate-300 font-medium text-[11px]">{s.title}</span>
+                  <span className="truncate text-neutral-300 font-medium text-[11px]">{s.title}</span>
                 </label>
                 <span className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[9px] text-cyan-400/80 bg-cyan-950/60 px-1.5 py-0.5 rounded border border-cyan-500/20">
+                  <span className="text-[9px] text-white/80 bg-neutral-900/60 px-1.5 py-0.5 rounded border border-white/20">
                     {sizeLabel(s)}
                   </span>
                   <button
                     type="button"
                     onClick={() => onDelete(s.id)}
-                    className="text-slate-500 hover:text-red-400 p-0.5"
+                    className="text-neutral-500 hover:text-red-400 p-0.5"
                     aria-label={`Remove source ${s.title}`}
                   >
                     <X size={12} aria-hidden="true" />
@@ -174,7 +174,7 @@ export function SourcesPanel({
 
         {/* The initial per-user fetch shows here rather than letting the
             "no sources" copy flash before the list arrives. */}
-        <div className="relative p-4 rounded bg-hud-elevated/60 border border-hud-border/80 bracket-dim group hover:border-cyan-500/30 transition-colors">
+        <div className="relative p-4 rounded bg-hud-elevated/60 border border-hud-border/80 bracket-dim group hover:border-white/30 transition-colors">
           <span className="hud-bracket-tl" />
           <span className="hud-bracket-tr" />
           <span className="hud-bracket-bl" />
@@ -184,11 +184,11 @@ export function SourcesPanel({
               <>
                 <Loader2
                   size={16}
-                  className="text-cyan-400 shrink-0 mt-0.5 animate-spin"
+                  className="text-white shrink-0 mt-0.5 animate-spin"
                   aria-hidden="true"
                 />
                 <p
-                  className="text-[11px] font-mono text-cyan-300/90 leading-relaxed tracking-wider"
+                  className="text-[11px] font-mono text-white/90 leading-relaxed tracking-wider"
                   role="status"
                 >
                   LOADING SOURCES…
@@ -196,8 +196,8 @@ export function SourcesPanel({
               </>
             ) : (
               <>
-                <Info size={16} className="text-cyan-400 shrink-0 mt-0.5" aria-hidden="true" />
-                <p className="text-[11px] font-mono text-slate-400 leading-relaxed">
+                <Info size={16} className="text-white shrink-0 mt-0.5" aria-hidden="true" />
+                <p className="text-[11px] font-mono text-neutral-400 leading-relaxed">
                   Saved sources appear here. Checked sources are automatically ingested into your
                   next transform sequence.
                 </p>
@@ -208,11 +208,11 @@ export function SourcesPanel({
       </div>
 
       {/* Footer status bar */}
-      <div className="p-3 border-t border-hud-border bg-hud-elevated/30 text-[10px] font-mono text-slate-500 flex justify-between items-center">
-        <span className={hasSources ? "text-cyan-400 transition-colors duration-300" : "transition-colors duration-300"}>
+      <div className="p-3 border-t border-hud-border bg-hud-elevated/30 text-[10px] font-mono text-neutral-500 flex justify-between items-center">
+        <span className={hasSources ? "text-white transition-colors duration-300" : "transition-colors duration-300"}>
           STORAGE: {storageLabel(totalBytes)}
         </span>
-        <span className={hasSources ? "text-cyan-400 font-semibold" : "text-slate-400"}>
+        <span className={hasSources ? "text-white font-semibold" : "text-neutral-400"}>
           {hasSources ? "ONLINE" : "READY"}
         </span>
       </div>

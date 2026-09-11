@@ -4,7 +4,7 @@
    Reuses the console's shared tokens (theme.css) and layout primitives
    (.field, .field-label, .error-note, .eyebrow) so the page sits in the
    same visual family as the rest of the app. Per spec, the primary
-   action and focus states use cyan (#22d3ee) rather than the console's
+   action and focus states use the white accent shared with the landing page,
    usual violet accent.
    ============================================================ */
 
@@ -32,7 +32,7 @@
   width: 18px;
   height: 18px;
   border-style: solid;
-  border-color: rgba(34, 211, 238, 0.55);
+  border-color: rgba(255, 255, 255, 0.55);
   border-width: 0;
 }
 
@@ -73,7 +73,7 @@
 }
 
 .auth-card .eyebrow {
-  color: rgba(34, 211, 238, 0.85);
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .auth-title {
@@ -109,17 +109,17 @@
 
 /* Cyan focus ring on the shadcn Input, overriding its default violet. */
 .auth-page input:focus {
-  border-color: #22d3ee !important;
-  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.22) !important;
+  border-color: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.22) !important;
 }
 
 .auth-info {
   margin: 0;
   padding: 13px 15px;
-  background: rgba(34, 211, 238, 0.1);
-  border: 1px solid rgba(34, 211, 238, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 11px;
-  color: #a5f0fc;
+  color: #ffffff;
   font-size: 13.4px;
   line-height: 1.5;
 }
@@ -128,8 +128,8 @@
   width: 100%;
   height: 46px;
   margin-top: 4px;
-  background: #22d3ee !important;
-  color: #06222a !important;
+  background: #ffffff !important;
+  color: #000000 !important;
 }
 
 .auth-submit:hover:not(:disabled) {
@@ -137,7 +137,7 @@
 }
 
 .auth-submit:focus-visible {
-  outline-color: #22d3ee !important;
+  outline-color: #ffffff !important;
 }
 
 .auth-toggle {
@@ -153,11 +153,11 @@
 }
 
 .auth-toggle:hover {
-  color: #22d3ee;
+  color: #ffffff;
 }
 
 .auth-toggle:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ffffff;
   outline-offset: 2px;
   border-radius: 6px;
 }
