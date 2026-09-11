@@ -57,13 +57,20 @@ export default function AuthPage() {
       <div className="auth-frame">
         <span className="bracket-b" aria-hidden="true" />
         <div className="auth-card">
+          <img
+            src="/assets/prisma-logo.webp"
+            alt="Prisma"
+            width={169}
+            height={50}
+            className="h-[50px] w-auto mb-6 drop-shadow-[0_0_14px_rgba(34,211,238,0.35)]"
+          />
           <span className="eyebrow">{mode === "sign-in" ? "Sign in" : "Create account"}</span>
           <h1 className="auth-title">
             {mode === "sign-in" ? "Welcome back" : "Get started"}
           </h1>
           <p className="auth-sub">
             {mode === "sign-in"
-              ? "Sign in to access the Transform Console."
+              ? "Sign in to access the Prisma console."
               : "Create an account to start transforming sources."}
           </p>
 

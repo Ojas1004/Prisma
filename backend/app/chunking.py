@@ -79,11 +79,15 @@ MAP_CHUNK_CEILING_TOKENS = 5_500
 # SUMMARY_TOKEN_CAP by digest._enforce_cap, so the deliverable-sized default
 # (GROQ_MAX_TOKENS) reserves ~45x what actually survives. Groq counts the whole
 # reservation against TPM_LIMIT, so one map call alone exhausted the window and
-# every following call was rate-limited into a backoff. 1500 leaves generous
-# room for the cap plus low-effort thinking while letting several map calls
-# share one window; it matches llm.MIN_COMPLETION_TOKENS, the floor the 413
-# halving path already refuses to go below.
-MAP_COMPLETION_TOKENS = 1_500
+# every following call was rate-limited into a backoff.
+# 600, not the 175-token SUMMARY_TOKEN_CAP: that cap is enforced AFTER generation
+# by digest._enforce_cap trimming the returned text, so it never constrains what the
+# model emits. Measured output for a full FACTS/ENTITIES/CLAIMS block is 386-406
+# completion tokens (~30 of them low-effort reasoning); at max_tokens=400 the call
+# returns finish_reason="length" and llm.chat raises rather than yielding a partial
+# summary. 600 clears the measured ceiling with ~50% margin while still reserving
+# 2.5x less TPM than the previous 1500, leaving the window for the deliverable call.
+MAP_COMPLETION_TOKENS = 600
 
 # Reduce-step limits.
 SUMMARY_TOKEN_CAP = 175

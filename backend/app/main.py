@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     await client.close()
 
 
-app = FastAPI(title="SIH Transform", lifespan=lifespan)
+app = FastAPI(title="Prisma", lifespan=lifespan)
 
 origins = [o.strip() for o in config.CORS_ORIGINS.split(",")] if config.CORS_ORIGINS != "*" else ["*"]
 app.add_middleware(

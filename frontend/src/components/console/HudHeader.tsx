@@ -62,9 +62,16 @@ export function HudHeader() {
           <span className="absolute w-3 h-px bg-cyan-400/60 left-0 -translate-x-1 group-hover:w-4 transition-all" />
           <span className="absolute w-3 h-px bg-cyan-400/60 right-0 translate-x-1 group-hover:w-4 transition-all" />
         </span>
+        <img
+          src="/assets/prisma-mark.webp"
+          alt="Prisma"
+          width={58}
+          height={36}
+          className="h-9 w-auto shrink-0 drop-shadow-[0_0_8px_rgba(34,211,238,0.35)]"
+        />
         <span className="hidden sm:flex flex-col gap-0.5">
           <span className="text-xs font-mono font-bold tracking-widest text-slate-100 uppercase leading-none">
-            TRANSFORM <span className="text-hud-cyan">CONSOLE</span>
+            PRIS<span className="text-hud-cyan">MA</span>
           </span>
           <span className="text-[10px] font-mono text-slate-500 tracking-wider">v3.4.8 // LIVE</span>
         </span>

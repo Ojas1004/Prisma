@@ -6,15 +6,9 @@ import Home from "./pages/Home";
 import Transform from "./pages/Transform";
 import AuthPage from "./pages/AuthPage";
 
-/** Landing-page anchor sections, in document order. Shared by the header's
- * nav, the scrollspy, and the hash-scroll handler so the three can never
- * disagree about what exists. */
-export const SECTION_IDS = ["product", "case-studies", "contact"] as const;
-export type SectionId = (typeof SECTION_IDS)[number];
-
 const TITLES: Record<string, string> = {
-  "/": "Transform Console — Content Transformation Engine",
-  "/transform": "Transform Console",
+  "/": "Prisma — Turn any source into every format you need",
+  "/transform": "Prisma",
   "/auth": "Sign In",
 };
 
@@ -44,16 +38,25 @@ function HashScroll() {
     const id = hash.slice(1);
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // The section may not have mounted yet on a cold load, and the page keeps
-    // growing after it does — the 3D hero scene and lazy images settle over
-    // a second or more, which moves the target out from under a single
-    // scroll. So keep re-aiming until the section actually sits at the top
-    // and the document height has stopped changing.
+    // The section may not have mounted yet on a cold load, so wait for it —
+    // but aim EXACTLY ONCE and then stop.
+    //
+    // An earlier version re-aimed every 250ms for 4s until the document height
+    // stopped changing. That assumed the height settles; with the always-on
+    // WebGL backdrop it never does, so the loop kept dragging the page back to
+    // the anchor and the page read as "scroll is frozen" after clicking a nav
+    // link. Any user scroll also cancels the pending aim.
     let cancelled = false;
     let raf = 0;
-    let timer = 0;
-    const deadline = Date.now() + 4000;
-    let lastHeight = -1;
+    const deadline = Date.now() + 2000;
+
+    const stop = () => {
+      cancelled = true;
+    };
+    // A deliberate scroll by the reader always wins over the pending aim.
+    window.addEventListener("wheel", stop, { passive: true, once: true });
+    window.addEventListener("touchstart", stop, { passive: true, once: true });
+    window.addEventListener("keydown", stop, { once: true });
 
     const aim = () => {
       if (cancelled) return;
@@ -62,27 +65,18 @@ function HashScroll() {
         if (Date.now() < deadline) raf = requestAnimationFrame(aim);
         return;
       }
-      const height = document.documentElement.scrollHeight;
-      const offset = Math.abs(el.getBoundingClientRect().top);
-      const settled = height === lastHeight;
-      lastHeight = height;
-
-      // `scroll-margin-top` on the sections keeps them clear of the fixed
-      // nav, so aiming at the element itself is correct.
-      if (!settled || offset > 4) {
-        el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
-      }
-      if (Date.now() < deadline && (!settled || offset > 4)) {
-        // Re-check on a timer rather than every frame: a smooth scroll is in
-        // flight, and re-issuing it each frame would fight itself.
-        timer = window.setTimeout(aim, 250);
-      }
+      // `scroll-margin-top` on the sections keeps them clear of the fixed nav,
+      // so aiming at the element itself is correct.
+      el.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+      cancelled = true;
     };
     raf = requestAnimationFrame(aim);
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
-      clearTimeout(timer);
+      window.removeEventListener("wheel", stop);
+      window.removeEventListener("touchstart", stop);
+      window.removeEventListener("keydown", stop);
     };
     // `key` changes even when the same hash is clicked twice, so repeat
     // clicks re-scroll instead of doing nothing.

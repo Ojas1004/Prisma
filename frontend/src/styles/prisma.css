@@ -1,0 +1,156 @@
+/* ============================================================
+   Prisma landing design system.
+
+   Tokens from ui-ux-pro-max --design-system (Dark Mode OLED
+   palette, JetBrains Mono / IBM Plex Sans pairing) combined with
+   the fluid clamp() type + space scale from modern-web-design.
+   Scoped to .prisma so the /transform console is untouched.
+   ============================================================ */
+
+.prisma {
+  /* Monochrome: pure black ground, white ink, neutral grey ramp between.
+     No hue anywhere — "accent" is simply white-on-black inverted, which
+     keeps CTAs the highest-contrast element on the page. */
+  --p-bg: #000000;
+  --p-fg: #ffffff;
+  --p-card: #0b0b0b;
+  --p-elevated: #141414;
+  --p-muted: #1a1a1a;
+  --p-muted-fg: #a1a1a1;
+  --p-dim-fg: #737373;
+  --p-border: #262626;
+  --p-border-lit: #404040;
+  --p-accent: #ffffff;
+  --p-on-accent: #000000;
+
+  /* Fluid type scale. Every text size on the page resolves to one of these
+     steps — typography.md > Conveying hierarchy warns that ad-hoc sizing
+     obscures the information hierarchy. */
+  --p-text-label: clamp(0.6875rem, 0.66rem + 0.12vw, 0.75rem);
+  --p-text-xs: clamp(0.75rem, 0.72rem + 0.15vw, 0.8125rem);
+  --p-text-sm: clamp(0.8125rem, 0.78rem + 0.2vw, 0.9375rem);
+  --p-text-base: clamp(0.9375rem, 0.9rem + 0.25vw, 1.0625rem);
+  --p-text-lg: clamp(1.125rem, 1rem + 0.6vw, 1.375rem);
+  --p-text-xl: clamp(1.5rem, 1.25rem + 1.2vw, 2.25rem);
+  --p-text-2xl: clamp(2rem, 1.5rem + 2.4vw, 3.25rem);
+  --p-text-3xl: clamp(2.5rem, 1.8rem + 3.6vw, 4.5rem);
+
+  /* Fluid space scale (density 5/10 — standard) */
+  --p-space-xs: clamp(0.5rem, 0.45rem + 0.25vw, 0.75rem);
+  --p-space-sm: clamp(0.75rem, 0.65rem + 0.5vw, 1.125rem);
+  --p-space-md: clamp(1rem, 0.85rem + 0.75vw, 1.5rem);
+  --p-space-lg: clamp(1.5rem, 1.2rem + 1.5vw, 2.5rem);
+  --p-space-xl: clamp(2.5rem, 2rem + 2.5vw, 4rem);
+  --p-space-2xl: clamp(4rem, 3rem + 5vw, 7rem);
+
+  --p-radius: 16px;
+  --p-radius-sm: 10px;
+
+  /* Motion. motion.md > Providing feedback asks for brevity and precision,
+     and to avoid motion on frequent interactions — so hover/press use the
+     fast step and only first-reveal entrances use the slow one. */
+  --p-dur-fast: 150ms;   /* hover, press — frequent, must feel instant */
+  --p-dur: 250ms;        /* state changes */
+  --p-dur-enter: 400ms;  /* one-time scroll entrances */
+  --p-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Elevation. One rule, applied by role. */
+  --p-elev-hover: 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  background: var(--p-bg);
+  color: var(--p-fg);
+  font-family: "IBM Plex Sans", Inter, system-ui, sans-serif;
+  font-size: var(--p-text-base);
+  line-height: 1.6;
+}
+
+.prisma .mono {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+/* ── Surfaces ─────────────────────────────────────────────── */
+
+.p-card {
+  background: var(--p-card);
+  border: 1px solid var(--p-border);
+  border-radius: var(--p-radius);
+  transition: border-color var(--p-dur-fast) var(--p-ease),
+              transform var(--p-dur-fast) var(--p-ease),
+              box-shadow var(--p-dur-fast) var(--p-ease);
+}
+
+.p-card:hover {
+  border-color: var(--p-border-lit);
+  transform: translateY(-2px);
+  box-shadow: var(--p-elev-hover);
+}
+
+/* Ambient gradient mesh, very low opacity. */
+.p-mesh {
+  background-image:
+    radial-gradient(ellipse 70% 55% at 12% -5%, rgba(255, 255, 255, 0.06), transparent 62%),
+    radial-gradient(ellipse 55% 45% at 88% 5%, rgba(255, 255, 255, 0.04), transparent 60%);
+}
+
+.p-grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+}
+
+/* ── Buttons — 44px min touch target (ui-ux-pro-max P2) ───── */
+
+.p-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0 1.5rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: var(--p-text-sm);
+  cursor: pointer;
+  transition: all var(--p-dur-fast) var(--p-ease);
+}
+
+.p-btn-primary {
+  background: var(--p-accent);
+  color: var(--p-on-accent);
+  border: 1px solid var(--p-accent);
+}
+
+.p-btn-primary:hover {
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.14);
+}
+
+.p-btn-ghost {
+  background: transparent;
+  color: var(--p-fg);
+  border: 1px solid var(--p-border-lit);
+}
+
+.p-btn-ghost:hover {
+  border-color: var(--p-fg);
+  background: var(--p-muted);
+}
+
+/* ── Accessibility ────────────────────────────────────────── */
+
+.prisma :focus-visible {
+  outline: 3px solid var(--p-fg);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prisma *,
+  .prisma *::before,
+  .prisma *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

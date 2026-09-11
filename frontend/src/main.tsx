@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 // these custom properties.
 import "./styles/theme.css";
 import "./styles/tailwind.css";
+import "./styles/prisma.css";
 import App from "./App";
 
 createRoot(document.getElementById("root")!).render(

@@ -113,7 +113,7 @@ export function TransformConsole(props: TransformConsoleProps) {
             </button>
           )}
           <h1 className="text-sm font-sans font-bold tracking-tight text-white uppercase shrink-0">
-            Transform Console
+            Prisma
           </h1>
           <span
             className={`relative hidden sm:inline-flex items-center gap-2 text-[10px] font-mono text-cyan-400 bg-cyan-950/40 border px-2.5 py-0.5 rounded tracking-wider transition-all duration-300 ${
