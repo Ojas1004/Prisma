@@ -8,7 +8,8 @@ import asyncio
 import logging
 from dataclasses import replace
 
-from app import chunking, config, db, digest, sources
+from app import chunking, config, db, digest, sources, timing
+from app.generators import batch
 from app.generators import Generator, Progress, Request
 from app.models import Artifact, Bundle, SSEEvent, Transform
 from app.sse import hub
@@ -67,6 +68,14 @@ class Runner:
         return to_run, kept
 
     async def _run(self, transform_id: str, retry_types: list[str]) -> None:
+        with timing.run(label=f"transform {transform_id[:8]}"):
+            await self._run_timed(transform_id, retry_types)
+            # Which provider served each call — non-empty only when a
+            # FallbackClient is wrapping two providers.
+            served = self.client.summary() if hasattr(self.client, "summary") else ""
+            timing.log_summary(served_by=served)
+
+    async def _run_timed(self, transform_id: str, retry_types: list[str]) -> None:
         t = await db.get_transform(transform_id)
         if t is None:
             log.error("[transform][%s] row disappeared", transform_id)
@@ -89,10 +98,12 @@ class Runner:
         # ── Resolve source (once for the whole bundle) ────────────────────
         await progress("reading_source", "Reading source content...")
         try:
-            source_path = await db.get_source_path(transform_id)
-            resolved = await asyncio.to_thread(
-                sources.resolve, t.source_kind, t.source_text, source_path
-            )
+            async with timing.step("source_ingestion", f"kind={t.source_kind}"):
+                source_path = await db.get_source_path(transform_id)
+                resolved = await asyncio.to_thread(
+                    sources.resolve, t.source_kind, t.source_text, source_path
+                )
+                timing.annotate(f"{len(resolved.text):,} chars")
         except Exception as exc:  # noqa: BLE001
             await self._fail(transform_id, "reading_source", str(exc))
             return
@@ -109,7 +120,9 @@ class Runner:
         # existing plan stands untouched.
         if resolved.chunk_plan and resolved.chunk_plan.chunked:
             try:
-                real_tokens = await self.client.count_tokens(resolved.text)
+                async with timing.step("path_decision_count_tokens"):
+                    real_tokens = await self.client.count_tokens(resolved.text)
+                    timing.annotate(f"{real_tokens:,} tokens")
             except Exception as exc:  # noqa: BLE001
                 log.info(
                     "[path] token counting unavailable (%s) — keeping the "
@@ -151,7 +164,8 @@ class Runner:
                 f"chunked into {plan.count} pieces",
             )
             try:
-                digest_text = await digest.build_digest(self.client, plan, progress)
+                async with timing.step("map_reduce_digest", f"{plan.count} chunks"):
+                    digest_text = await digest.build_digest(self.client, plan, progress)
             except Exception as exc:  # noqa: BLE001
                 await self._fail(transform_id, "chunking", str(exc))
                 return
@@ -161,7 +175,58 @@ class Runner:
                 f"Chunk extraction complete — {plan.count} summaries reduced for generation",
             )
 
-        # ── Generate each selected type ───────────────────────────────────
+        # ── Batched generation: every type in ONE call ────────────────────
+        # The per-type loop below costs one request per deliverable, each
+        # resending the same source. That is the dominant rate-limit cost on
+        # both providers (Gemini: 20 requests/day; Groq: 8,000 tokens/minute
+        # shared by prompt and completion), so try one batched call first.
+        #
+        # Any failure falls through to the per-type loop with `to_run`
+        # untouched. That fallback is load-bearing: one large completion is
+        # likelier to truncate than several small ones, and without it a
+        # single truncation would fail every deliverable at once.
+        batched: dict[str, Artifact] = {}
+        if config.BATCH_DELIVERABLES and len(to_run) > 1:
+            batch_types = [self.registry[ot].output_type for ot in to_run]
+            await progress(
+                "generating",
+                f"Generating {len(to_run)} deliverables in one request...",
+            )
+            try:
+                batched = await batch.generate_batch(
+                    self.client,
+                    self.registry[to_run[0]].cfg,
+                    batch_types,
+                    Request(source=resolved, options=t.options),
+                )
+            except Exception as exc:  # noqa: BLE001 — optimization only
+                log.warning(
+                    "[transform][%s] batched generation failed, falling back to "
+                    "per-type calls: %s", transform_id, str(exc)[:300],
+                )
+            else:
+                log.info(
+                    "[transform][%s] batched generation produced %d/%d "
+                    "deliverables in 1 request (saved %d requests)",
+                    transform_id, len(batched), len(to_run), len(to_run) - 1,
+                )
+                for ot, artifact in batched.items():
+                    artifact.source_chunks = chunk_count
+                    results[ot] = artifact
+                    hub.publish(
+                        transform_id,
+                        SSEEvent(
+                            step=f"generating:{ot}", status="completed",
+                            message=f"{self.registry[ot].output_type.label} complete",
+                            output_type=ot,
+                        ),
+                    )
+                to_run = [ot for ot in to_run if ot not in batched]
+
+        # ── Generate each remaining type individually ─────────────────────
+        # Reached when batching is off, produced nothing, or left types over.
+        # Sequential by design — parallel calls race each other into the same
+        # rate limit.
         for i, ot in enumerate(to_run, 1):
             generator = self.registry[ot]
             label = generator.output_type.label
@@ -174,9 +239,10 @@ class Runner:
                 return p
 
             try:
-                output = await generator.generate(
-                    Request(source=resolved, options=t.options), type_progress()
-                )
+                async with timing.step(f"deliverable:{ot}"):
+                    output = await generator.generate(
+                        Request(source=resolved, options=t.options), type_progress()
+                    )
                 artifact = output.artifact
                 artifact.output_type = ot
                 for path_field, (payload, extension) in output.files.items():
@@ -202,16 +268,17 @@ class Runner:
 
         # ── Persist the bundle ────────────────────────────────────────────
         await progress("saving", "Saving deliverables...")
-        bundle = Bundle(artifacts=[results[ot] for ot in t.output_types if ot in results])
-        succeeded = [a for a in bundle.artifacts if not a.error]
+        async with timing.step("output_assembly", f"{len(results)} artifacts"):
+            bundle = Bundle(artifacts=[results[ot] for ot in t.output_types if ot in results])
+            succeeded = [a for a in bundle.artifacts if not a.error]
 
-        if not succeeded:
-            await db.update_bundle(transform_id, bundle)
-            first_error = bundle.artifacts[0].error if bundle.artifacts else "nothing generated"
-            await self._fail(transform_id, "pipeline", f"all output types failed — first error: {first_error}")
-            return
+            if not succeeded:
+                await db.update_bundle(transform_id, bundle)
+                first_error = bundle.artifacts[0].error if bundle.artifacts else "nothing generated"
+                await self._fail(transform_id, "pipeline", f"all output types failed — first error: {first_error}")
+                return
 
-        await db.complete_transform(transform_id, bundle)
+            await db.complete_transform(transform_id, bundle)
         hub.publish(
             transform_id,
             SSEEvent(

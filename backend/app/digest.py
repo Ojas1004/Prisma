@@ -16,7 +16,7 @@ conflicting claims as findings to surface, not noise to reconcile.
 
 import logging
 
-from app import llm
+from app import llm, timing
 from app.chunking import (
     MAP_COMPLETION_TOKENS,
     REDUCE_INPUT_TOKENS,
@@ -75,12 +75,13 @@ async def map_chunk(client: llm.GroqClient, chunk: Chunk, total: int) -> ChunkSu
     # `label` tags this call in llm.chat's truncation-cascade logs, so a map
     # escalation reads as "map chunk 3/5" rather than being indistinguishable
     # from a deliverable-generation escalation.
-    result = await client.chat(
-        [llm.text_message("user", prompt)],
-        reasoning_effort="low",
-        max_tokens=MAP_COMPLETION_TOKENS,
-        label=f"map chunk {chunk.index}/{total}",
-    )
+    async with timing.step(f"api_call:map_chunk_{chunk.index}"):
+        result = await client.chat(
+            [llm.text_message("user", prompt)],
+            reasoning_effort="low",
+            max_tokens=MAP_COMPLETION_TOKENS,
+            label=f"map chunk {chunk.index}/{total}",
+        )
     return ChunkSummary(index=chunk.index, text=_enforce_cap(result.text.strip(), chunk.index))
 
 

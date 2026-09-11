@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { exportUrl } from "@/lib/api";
+import { shareToLinkedIn, xShareUrl } from "@/lib/share";
 import type { Artifact } from "@/lib/types";
 import type { Turn, TypeState } from "./types";
 
@@ -12,6 +13,48 @@ const STATUS: Record<TypeState, { glyph: string; className: string; label: strin
   ok: { glyph: "✓", className: "is-ok", label: "Complete" },
   err: { glyph: "!", className: "is-err", label: "Failed" },
 };
+
+/* ── Share actions ──────────────────────────────────────────────
+ * X takes the post text in the intent URL, so it opens prefilled. LinkedIn's
+ * share-offsite only accepts a crawlable URL and ignores passed text, so
+ * without a public deployment we copy the body and open the composer to paste
+ * into. See lib/share.ts for why the two differ. */
+
+function ShareActions({ text, title }: { text: string; title: string }) {
+  const [notice, setNotice] = useState("");
+
+  // The post itself is what people want to share; the title is a fallback for
+  // artifact types whose body is long-form rather than post-shaped.
+  const payload = (text || title).trim();
+  if (!payload) return null;
+
+  async function onLinkedIn() {
+    const copied = await shareToLinkedIn(payload);
+    setNotice(
+      copied
+        ? "Post copied — paste it into LinkedIn"
+        : "Could not copy automatically — copy the text above",
+    );
+    window.setTimeout(() => setNotice(""), 6000);
+  }
+
+  return (
+    <>
+      <button className="btn-sm" type="button" onClick={onLinkedIn}>
+        Share on LinkedIn
+      </button>
+      <a
+        className="btn-sm"
+        href={xShareUrl(payload)}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        Share on X
+      </a>
+      {notice && <span className="share-note">{notice}</span>}
+    </>
+  );
+}
 
 /* ── User turn: a compact request summary, not an input replay ── */
 
@@ -194,6 +237,7 @@ export function AssistantTurn({
                   Export .md
                 </a>
               )}
+              {!a.error && <ShareActions text={a.body_markdown} title={a.title} />}
               {turn.result!.content!.artifacts.length > 1 && (
                 <button
                   className="btn-sm"

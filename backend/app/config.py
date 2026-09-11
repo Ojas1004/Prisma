@@ -115,6 +115,33 @@ MAX_SOURCE_CHARS = int(os.getenv("MAX_SOURCE_CHARS", "14000"))
 # fit thinking plus the full deliverable.
 GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "high")
 
+# Generate every selected deliverable in ONE API call instead of one call per
+# type. The per-type loop resends the same source material N times, which is
+# the dominant rate-limit cost on both providers: Gemini's free tier allows 20
+# requests per DAY (one 7-type job = a third of it), and Groq's 8,000
+# tokens-per-minute window is shared by prompt and completion, so each extra
+# call re-pays for the source. Batching a 7-type job takes it from 7 requests
+# to 1.
+#
+# Falls back to per-type generation automatically whenever the batched call
+# fails or returns an incomplete set, so turning this off is only needed to
+# diagnose a batching-specific problem.
+# Provider to retry on when the primary's quota is exhausted. Both free tiers
+# have hard DAILY walls that waiting cannot clear (Gemini: 20 requests/day;
+# Groq: 200,000 tokens/day), and they reset on independent clocks — so when
+# one is spent the other usually still has capacity.
+#
+# Defaults to the opposite of LLM_PROVIDER so fallback works with no extra
+# setup; set to "" (empty) to disable and let quota failures fail the job.
+# Only quota/429 errors fall back: a truncation or bad-JSON failure would
+# repeat identically on the secondary, so it is surfaced immediately.
+LLM_FALLBACK_PROVIDER = os.getenv(
+    "LLM_FALLBACK_PROVIDER",
+    "groq" if LLM_PROVIDER == "gemini" else "gemini",
+).strip().lower()
+
+BATCH_DELIVERABLES = os.getenv("BATCH_DELIVERABLES", "1").strip().lower() not in ("0", "false", "no")
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*")
 
 

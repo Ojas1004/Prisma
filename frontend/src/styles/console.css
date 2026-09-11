@@ -247,6 +247,17 @@
 
 .btn-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 17px; }
 
+/* Transient confirmation after a share copies the post to the clipboard.
+   Sits inline in the action row, so it never shifts the card's layout. */
+.share-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-family: var(--font-sans);
+  font-size: 12.6px;
+  color: var(--muted, #8b8b8b);
+}
+
 /* ── Sources list ─────────────────────────────────────────── */
 
 .src-row {

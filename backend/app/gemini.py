@@ -28,7 +28,7 @@ import logging
 from google import genai
 from google.genai import types
 
-from app import config
+from app import config, timing
 from app.llm import ChatResult, GroqError, VALID_EFFORTS
 
 log = logging.getLogger("llm")
@@ -223,6 +223,18 @@ class GeminiClient:
                     await asyncio.sleep(attempt * 2)
                     continue
                 raise GroqError(f"{where}gemini {self.chat_model}: {str(exc)[:300]}") from exc
+
+            um = getattr(resp, "usage_metadata", None)
+            if um is not None:
+                pt = getattr(um, "prompt_token_count", None)
+                ct = getattr(um, "candidates_token_count", None)
+                tt = getattr(um, "total_token_count", None)
+                th = getattr(um, "thoughts_token_count", None)
+                log.info(
+                    "[tokens]%s prompt=%s completion=%s thoughts=%s total=%s model=%s",
+                    f" {label}:" if label else "", pt, ct, th, tt, self.chat_model,
+                )
+                timing.annotate(f"tokens in={pt} out={ct} total={tt}")
 
             text = (resp.text or "").strip()
             finish = _finish_reason(resp)

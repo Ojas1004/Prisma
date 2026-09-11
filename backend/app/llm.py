@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from app import config
+from app import config, timing
 
 log = logging.getLogger("llm")
 
@@ -118,8 +118,15 @@ class GroqClient:
     nothing below __init__ — the retry, rate-limit and truncation-cascade
     logic is shared verbatim."""
 
-    def __init__(self) -> None:
-        if config.LLM_PROVIDER == "openrouter":
+    def __init__(self, provider: str = "") -> None:
+        """`provider` overrides config.LLM_PROVIDER for this instance.
+
+        Needed because this client can be constructed as a FALLBACK while a
+        different provider is primary: provider.py builds a GroqClient behind
+        a Gemini primary, and without the override the global LLM_PROVIDER
+        ("gemini") would make this client reject itself as unknown."""
+        provider = (provider or config.LLM_PROVIDER).strip().lower()
+        if provider == "openrouter":
             if not config.OPENROUTER_API_KEY:
                 raise GroqError("OPENROUTER_API_KEY is not set (LLM_PROVIDER=openrouter)")
             self.provider = "openrouter"
@@ -127,7 +134,7 @@ class GroqClient:
             base_url = config.OPENROUTER_BASE_URL
             self.chat_model = config.OPENROUTER_CHAT_MODEL
             self.vision_model = config.OPENROUTER_VISION_MODEL
-        elif config.LLM_PROVIDER == "groq":
+        elif provider == "groq":
             if not config.GROQ_API_KEY:
                 raise GroqError("GROQ_API_KEY is not set")
             self.provider = "groq"
@@ -137,7 +144,7 @@ class GroqClient:
             self.vision_model = config.GROQ_VISION_MODEL
         else:
             raise GroqError(
-                f"unknown LLM_PROVIDER {config.LLM_PROVIDER!r} — expected 'groq' or 'openrouter'"
+                f"unknown LLM_PROVIDER {provider!r} — expected 'groq' or 'openrouter'"
             )
 
         log.info(
@@ -274,6 +281,19 @@ class GroqClient:
         choices = data.get("choices") or []
         if not choices:
             raise GroqError(f"empty response from {payload['model']}")
+
+        usage = data.get("usage") or {}
+        if usage:
+            log.info(
+                "[tokens]%s prompt=%s completion=%s total=%s model=%s",
+                f" {label}:" if label else "",
+                usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                usage.get("total_tokens"), payload.get("model"),
+            )
+            timing.annotate(
+                f"tokens in={usage.get('prompt_tokens')} out={usage.get('completion_tokens')} "
+                f"total={usage.get('total_tokens')}"
+            )
 
         content = choices[0].get("message", {}).get("content", "")
         finish_reason = choices[0].get("finish_reason", "")

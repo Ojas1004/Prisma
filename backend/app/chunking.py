@@ -22,17 +22,30 @@ MAP CALL (per chunk):
    ------
     5,500  absolute ceiling for one chunk's text
 
-We deliberately do NOT size chunks to 5,500. A multi-select run fires N map
-calls plus M deliverable calls back-to-back inside the same 60s window, and
-the deliverable calls are the expensive ones. Sizing a map call to a third
-of the window lets 2-3 of them clear per minute instead of forcing a
-rate-limit wait between every single chunk:
+Chunk size is capped below 5,500 but sized as LARGE as that cap allows, not
+small. An earlier revision used 2,000 on the theory that a smaller map call
+would let "2-3 of them clear per minute"; measurement on 12 Sep 2026 showed
+that theory was wrong, and the arithmetic says why:
 
-    ~2,600  target total map call
+    chunk 2,000 + 1,500 completion + 600 overhead = 4,100 tokens per call
+
+4,100 is more than half of the 8,000 window, so only ONE map call clears per
+minute regardless — exactly one, at 2,000 or at 4,000. Small chunks therefore
+bought nothing and cost extra calls: the Attention paper split into 5 chunks,
+the first 3 drained the window, and chunks 4-5 sat in 429 backoff for 19.7s
+and 42.1s (the map step was 48.8% of total pipeline wall time).
+
+Since the per-minute call rate is 1 either way, fewer and bigger is strictly
+better — each call still waits out one window, but there are fewer windows to
+wait out:
+
+    ~5,100  target total map call (still under the 5,500 ceiling below)
     -1,500  completion reservation
     -  600  prompt overhead
     ------
-     2,000  chunk text budget  ->  CHUNK_TOKENS
+     3,000  chunk text budget  ->  CHUNK_TOKENS
+
+That takes the same document from 5 chunks to 3.
 
 REDUCE CALL (once, feeds the existing per-deliverable generate()):
     8,000  TPM ceiling
@@ -68,7 +81,7 @@ log = logging.getLogger("chunking")
 TOKENS_PER_WORD = 1.3
 CHARS_PER_TOKEN = 4  # cross-check only
 
-CHUNK_TOKENS = 2_000
+CHUNK_TOKENS = 3_000
 CHUNK_CHARS = CHUNK_TOKENS * CHARS_PER_TOKEN  # 8,000
 OVERLAP_RATIO = 0.12  # 12% — ~240 tokens, 2-3 paragraphs of carry-over
 OVERLAP_CHARS = int(CHUNK_CHARS * OVERLAP_RATIO)  # 960

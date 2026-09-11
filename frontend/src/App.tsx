@@ -93,7 +93,7 @@ export default function App() {
         <HashScroll />
         <Routes>
           <Route path="/auth" element={<AuthPage />} />
-          <Route
+        <Route
             path="/transform"
             element={
               <ProtectedRoute>

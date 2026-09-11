@@ -35,7 +35,7 @@ try:
             if js(s,"return location.pathname")!="/auth": break
     print("after login, path:", js(s,"return location.pathname"), flush=True)
 
-    send(s,"WebDriver:Navigate",{"url":"http://localhost:5173/transform"}); time.sleep(8)
+    send(s,"WebDriver:Navigate",{"url":"http://localhost:5173/transform"}); time.sleep(20)
     print("path:", js(s,"return location.pathname"), flush=True)
     if js(s,"return location.pathname")!="/transform":
         print("ABORT: not authenticated, refusing to poll a login page"); raise SystemExit(1)
