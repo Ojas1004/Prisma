@@ -18,6 +18,45 @@ DATABASE_URL = os.getenv(
     "postgresql://sih:sih@localhost:5434/sih_transform",
 )
 
+# Which upstream serves generation: "gemini" (default), "groq" or
+# "openrouter".
+#
+# Gemini is the primary provider: Groq's 8,000 TPM cap — the constraint the
+# whole chunking architecture in chunking.py was built to survive — made its
+# daily quota too tight for real use. Gemini's free tier is ~250k TPM, so
+# tokens per minute is no longer the binding constraint; REQUESTS per minute
+# and per day are (see app/gemini.py). Groq and OpenRouter remain fully
+# functional for rollback: set LLM_PROVIDER=groq to restore the previous
+# behavior exactly.
+#
+# groq/openrouter share one OpenAI-compatible client (app/llm.py) and differ
+# only in base URL, key and model string. Gemini uses the google-genai SDK
+# (app/gemini.py) and deliberately exposes the identical chat() surface, so no
+# call site changes.
+#
+# Environment variables:
+#   LLM_PROVIDER=gemini|groq|openrouter   # default "gemini" when unset
+#   GEMINI_API_KEY=AIza…                  # required when provider is gemini
+#   GEMINI_MODEL=gemini-2.5-flash         # optional override
+#   OPENROUTER_API_KEY=sk-or-…            # required when provider is openrouter
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower() or "gemini"
+
+# Gemini (aistudio.google.com/apikey) — primary provider. Free-tier limits are
+# per-REQUEST (roughly 10 RPM / 250 RPD on 2.5 Flash) rather than per-token;
+# current figures: ai.google.dev/gemini-api/docs/rate-limits
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# gemini-2.5-flash is retired for new API keys (404: "no longer available to
+# new users"), so the default is the 3.x flash Google's own error points at.
+GEMINI_CHAT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+# Gemini models are natively multimodal, so the text model reads images too.
+GEMINI_VISION_MODEL = os.getenv("GEMINI_VISION_MODEL", "")
+# Output-token ceiling (SDK: max_output_tokens). Higher than GROQ_MAX_TOKENS
+# because Gemini budgets thinking separately from output, so the reservation no
+# longer has to cover both.
+GEMINI_MAX_TOKENS = int(os.getenv("GEMINI_MAX_TOKENS", "8192"))
+# low | medium | high — mapped to a thinking budget in app/gemini.py.
+GEMINI_REASONING_EFFORT = os.getenv("GEMINI_REASONING_EFFORT", "high")
+
 # Groq (api.groq.com) — OpenAI-compatible text inference. Model catalog moves
 # fast; check console.groq.com/docs/models if a default gets deprecated.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -25,6 +64,30 @@ GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
 GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "openai/gpt-oss-120b")
 # Used automatically whenever a message carries an image part (image sources).
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.6-27b")
+
+# OpenRouter (openrouter.ai) — alternate provider for local testing only.
+# The ":free" suffix selects the no-cost pool; without it the id resolves to
+# the paid variant, so never drop it from these defaults.
+#
+# NOT openai/gpt-oss-120b:free — that slug 404s (removed from the catalog on
+# 11 Sep 2026; OpenRouter's own error points at the paid slug instead).
+# NOT nvidia/nemotron-3-super-120b-a12b:free either — it returns its reasoning
+# AS the content (identical `reasoning` and `content` fields), so under the
+# map step's small budget the answer never begins and the job dies with
+# "empty response".
+# nex-n2.5-pro is the free stand-in that actually works: it supports both
+# response_format json_object (the map step needs it) and reasoning_effort
+# (so the effort ladder still applies), and keeps reasoning out of content.
+# Verify a slug is still live before changing these:
+#   curl -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+#        https://openrouter.ai/api/v1/models
+# and keep only entries whose pricing.prompt and pricing.completion are "0"
+# (prices come back as strings, and an "overrides" array can reintroduce cost
+# above a token threshold).
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_CHAT_MODEL = os.getenv("OPENROUTER_CHAT_MODEL", "nex-agi/nex-n2.5-pro:free")
+OPENROUTER_VISION_MODEL = os.getenv("OPENROUTER_VISION_MODEL", "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free")
 
 # Headroom for one deliverable. The default chat model is a *reasoning* model:
 # its thinking tokens spend the same completion budget as the answer, and in

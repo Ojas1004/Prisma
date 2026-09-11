@@ -8,7 +8,7 @@ import asyncio
 import logging
 from dataclasses import replace
 
-from app import config, db, digest, sources
+from app import chunking, config, db, digest, sources
 from app.generators import Generator, Progress, Request
 from app.models import Artifact, Bundle, SSEEvent, Transform
 from app.sse import hub
@@ -96,6 +96,47 @@ class Runner:
         except Exception as exc:  # noqa: BLE001
             await self._fail(transform_id, "reading_source", str(exc))
             return
+
+        # ── Single-call fast path vs map/reduce ───────────────────────────
+        # sources.resolve() had to decide with a chars/4 estimate because it
+        # runs in a thread and cannot await. Here we can, so re-check the
+        # borderline case against the provider's REAL tokenizer: a source the
+        # estimate called oversized may actually fit one context window, and
+        # chunking it would spend N+1 extra requests for nothing.
+        #
+        # Only ever cancels chunking, never introduces it — if the real count
+        # is at or above the threshold, or counting is unsupported/fails, the
+        # existing plan stands untouched.
+        if resolved.chunk_plan and resolved.chunk_plan.chunked:
+            try:
+                real_tokens = await self.client.count_tokens(resolved.text)
+            except Exception as exc:  # noqa: BLE001
+                log.info(
+                    "[path] token counting unavailable (%s) — keeping the "
+                    "estimate-based plan", str(exc)[:120],
+                )
+            else:
+                if real_tokens < chunking.CHUNKING_THRESHOLD_TOKENS:
+                    log.info(
+                        "[path] FAST PATH (single call): %d real tokens < %d threshold "
+                        "— skipping map-reduce (estimate had said %d tokens, %d chunks)",
+                        real_tokens, chunking.CHUNKING_THRESHOLD_TOKENS,
+                        resolved.chunk_plan.total_tokens, resolved.chunk_plan.count,
+                    )
+                    resolved = replace(resolved, chunk_plan=None)
+                else:
+                    log.info(
+                        "[path] MAP-REDUCE: %d real tokens >= %d threshold — "
+                        "chunking into %d pieces",
+                        real_tokens, chunking.CHUNKING_THRESHOLD_TOKENS,
+                        resolved.chunk_plan.count,
+                    )
+        elif resolved.text:
+            log.info(
+                "[path] FAST PATH (single call): source fit one context window "
+                "at ingestion (~%d estimated tokens) — no chunking",
+                resolved.chunk_plan.total_tokens if resolved.chunk_plan else 0,
+            )
 
         # ── Chunk + map/reduce (ONCE per source, not per deliverable) ─────
         # A multi-select job maps the document a single time here; every

@@ -1,7 +1,9 @@
-"""Groq API client (api.groq.com). The API is OpenAI-compatible chat
-completions — text-inference only, no image generation endpoint. Vision (image
-input) requires a multimodal model, so the client auto-selects the configured
-vision model whenever a message carries image parts."""
+"""OpenAI-compatible chat-completions client. The upstream is Groq
+(api.groq.com) by default; setting LLM_PROVIDER=openrouter points the same
+client at OpenRouter instead (local testing only — see config.LLM_PROVIDER).
+Text inference only, no image generation endpoint. Vision (image input)
+requires a multimodal model, so the client auto-selects the configured vision
+model whenever a message carries image parts."""
 
 import asyncio
 import base64
@@ -110,14 +112,41 @@ def _is_json_validate_failure(resp: httpx.Response) -> bool:
 
 
 class GroqClient:
+    """Chat-completions client for whichever provider config.LLM_PROVIDER
+    selects. Both supported providers (Groq, OpenRouter) speak the same
+    OpenAI-compatible chat-completions protocol, so the provider affects
+    nothing below __init__ — the retry, rate-limit and truncation-cascade
+    logic is shared verbatim."""
+
     def __init__(self) -> None:
-        if not config.GROQ_API_KEY:
-            raise GroqError("GROQ_API_KEY is not set")
-        self.chat_model = config.GROQ_CHAT_MODEL
-        self.vision_model = config.GROQ_VISION_MODEL
+        if config.LLM_PROVIDER == "openrouter":
+            if not config.OPENROUTER_API_KEY:
+                raise GroqError("OPENROUTER_API_KEY is not set (LLM_PROVIDER=openrouter)")
+            self.provider = "openrouter"
+            api_key = config.OPENROUTER_API_KEY
+            base_url = config.OPENROUTER_BASE_URL
+            self.chat_model = config.OPENROUTER_CHAT_MODEL
+            self.vision_model = config.OPENROUTER_VISION_MODEL
+        elif config.LLM_PROVIDER == "groq":
+            if not config.GROQ_API_KEY:
+                raise GroqError("GROQ_API_KEY is not set")
+            self.provider = "groq"
+            api_key = config.GROQ_API_KEY
+            base_url = config.GROQ_BASE_URL
+            self.chat_model = config.GROQ_CHAT_MODEL
+            self.vision_model = config.GROQ_VISION_MODEL
+        else:
+            raise GroqError(
+                f"unknown LLM_PROVIDER {config.LLM_PROVIDER!r} — expected 'groq' or 'openrouter'"
+            )
+
+        log.info(
+            "[llm] using provider: %s, model: %s (vision: %s, base_url: %s)",
+            self.provider, self.chat_model, self.vision_model, base_url,
+        )
         self._client = httpx.AsyncClient(
-            base_url=config.GROQ_BASE_URL,
-            headers={"Authorization": f"Bearer {config.GROQ_API_KEY}"},
+            base_url=base_url,
+            headers={"Authorization": f"Bearer {api_key}"},
             timeout=httpx.Timeout(300.0, connect=15.0),
         )
 
@@ -127,6 +156,7 @@ class GroqClient:
         json_mode: bool = False,
         reasoning_effort: str = "",
         max_tokens: int = 0,
+        label: str = "",
     ) -> ChatResult:
         """Call the chat model (vision model when images are attached) and
         return the assistant text.
@@ -138,7 +168,11 @@ class GroqClient:
         `max_tokens` overrides the completion reservation for this one call.
         The default is sized for a full deliverable; a caller whose output is
         short and hard-capped downstream (the digest map step) reserves far
-        less, so more of its calls fit the account's per-minute token window."""
+        less, so more of its calls fit the account's per-minute token window.
+
+        `label` tags this call in the truncation-cascade logs (for example
+        "map chunk 3/5") so a map-step escalation is distinguishable from a
+        deliverable-generation one when reading production logs."""
         is_vision = _has_image_parts(messages)
         payload: dict = {
             "model": self.vision_model if is_vision else self.chat_model,
@@ -165,43 +199,84 @@ class GroqClient:
         # let the deliverable have the tokens instead. Full-budget accounts
         # never leave the first rung.
         ladder = {"high": ["high", "medium", "low"], "medium": ["medium", "low"]}.get(effort, [effort])
+
+        # Last resort once the effort ladder is spent: the answer itself needs
+        # more room than the current reservation allows. Thinking and the answer
+        # share one completion budget, so at the bottom rung the only remaining
+        # lever is a bigger reservation. Each step is capped at GROQ_MAX_TOKENS
+        # so this can never exceed what the tier allows.
+        budget_steps = 2
+
         data: dict = {}
         applied = effort
         downgrade_reason = ""
-        for i, eff in enumerate(ladder):
+        i = 0
+        budget_bumps = 0
+        while True:
+            eff = ladder[i]
             if eff:
                 payload["reasoning_effort"] = eff
+            truncated = False
             try:
                 data = await self._post("/chat/completions", payload)
-                applied = eff
-                break
+                # A response truncated mid-answer is the same failure as a
+                # mid-JSON one: the completion budget ran out. Treat it as a
+                # downgrade trigger instead of a hard error, so the ladder and
+                # the budget escape below both get a chance.
+                ch = (data.get("choices") or [{}])[0]
+                if ch.get("finish_reason") == "length":
+                    truncated = True
+                else:
+                    applied = eff
+                    break
             except GroqError as exc:
-                if "json_validate_failed" not in str(exc) or i == len(ladder) - 1:
+                if "json_validate_failed" not in str(exc):
                     raise
-                # The proximate trigger is a response truncated mid-JSON: the
-                # model spent its completion budget thinking. The budget is
-                # usually already shrunk by a 413 halving upstream, so the root
-                # cause is token-budget pressure on the account's tier.
-                downgrade_reason = "completion budget exhausted while reasoning"
-                log.warning(
-                    "[groq][effort-downgrade] requested=%s from=%s to=%s reason=%s "
-                    "model=%s max_tokens=%s",
-                    effort, eff, ladder[i + 1], downgrade_reason,
-                    payload.get("model"), payload.get("max_tokens"),
+                truncated = True
+
+            if truncated:
+                reservation = payload.get("max_tokens", config.GROQ_MAX_TOKENS)
+                if i < len(ladder) - 1:
+                    # Rung available: spend less on thinking, leave more for
+                    # the answer.
+                    downgrade_reason = "completion budget exhausted while reasoning"
+                    log.warning(
+                        "[groq][effort-downgrade]%s truncated, escalating: "
+                        "requested=%s from=%s to=%s reason=%s model=%s max_tokens=%s",
+                        f" {label}:" if label else "",
+                        effort, eff, ladder[i + 1], downgrade_reason,
+                        payload.get("model"), reservation,
+                    )
+                    i += 1
+                    continue
+                if budget_bumps < budget_steps and reservation < config.GROQ_MAX_TOKENS:
+                    # Bottom rung already: the only lever left is a larger
+                    # reservation, capped at the configured ceiling.
+                    raised = min(reservation * 2, config.GROQ_MAX_TOKENS)
+                    downgrade_reason = "completion budget raised after truncation"
+                    log.warning(
+                        "[groq][budget-raise]%s truncated, escalating: "
+                        "effort=%s max_tokens=%d -> %d (cap %d)",
+                        f" {label}:" if label else "",
+                        eff, reservation, raised, config.GROQ_MAX_TOKENS,
+                    )
+                    payload["max_tokens"] = raised
+                    budget_bumps += 1
+                    continue
+                where = f"{label} " if label else ""
+                raise GroqError(
+                    f"{where}response hit the {reservation}-token limit before "
+                    "finishing, after the effort ladder and "
+                    f"{budget_bumps} budget increase(s) were exhausted — "
+                    "raise GROQ_MAX_TOKENS or shorten the source"
                 )
+
         choices = data.get("choices") or []
         if not choices:
             raise GroqError(f"empty response from {payload['model']}")
 
-        # A truncated answer is a silent corruption in non-JSON mode and a
-        # server-side 400 in JSON mode — surface it as an actionable error.
-        finish_reason = choices[0].get("finish_reason", "")
         content = choices[0].get("message", {}).get("content", "")
-        if finish_reason == "length":
-            raise GroqError(
-                f"response hit the {payload['max_tokens']}-token limit before finishing — "
-                "raise GROQ_MAX_TOKENS or request a shorter deliverable"
-            )
+        finish_reason = choices[0].get("finish_reason", "")
         if not content:
             raise GroqError(f"empty response from {payload['model']} (finish_reason={finish_reason!r})")
         return ChatResult(
@@ -281,6 +356,16 @@ class GroqClient:
                 log.warning("[groq] attempt %d/%d failed: %s", attempt, MAX_ATTEMPTS, last_error)
                 await asyncio.sleep(attempt * 2)
         raise GroqError(str(last_error))
+
+    async def count_tokens(self, text: str) -> int:
+        """Not available on this provider.
+
+        Neither Groq nor OpenRouter exposes a token-count endpoint, so the
+        single-call fast-path decision in sources.py cannot be made from a
+        real count here. Raising keeps the contract honest: the caller falls
+        back to the chars/4 estimate and the conservative chunking path,
+        which is exactly the pre-Gemini behavior."""
+        raise GroqError(f"count_tokens is not supported by provider {self.provider!r}")
 
     async def close(self) -> None:
         await self._client.aclose()

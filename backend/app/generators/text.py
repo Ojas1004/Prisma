@@ -41,7 +41,8 @@ class TextGenerator(Generator):
         # reasoning_effort is an API parameter, not a prompt parameter — it
         # bypasses parameters_block() and goes straight to the Groq payload.
         result = await self.client.chat(
-            messages, json_mode=True, reasoning_effort=req.options.reasoning_effort
+            messages, json_mode=True, reasoning_effort=req.options.reasoning_effort,
+            label=f"deliverable {self.output_type.type}",
         )
         parsed = parse_json_object(result.text)
 

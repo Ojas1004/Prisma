@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import config, db
 from app.auth_routes import router as auth_router
 from app.generators import build_registry
-from app.llm import GroqClient
+from app.provider import build_client
 from app.routes import router
 from app.runner import Runner
 from app.sources_routes import router as sources_router
@@ -23,7 +23,7 @@ logging.basicConfig(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     prompts = config.load_prompts()
-    client = GroqClient()
+    client = build_client()
     app.state.prompts = prompts
     app.state.runner = Runner(build_registry(prompts, client), client.chat_model)
 

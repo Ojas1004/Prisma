@@ -54,6 +54,8 @@ building a recursive reduce tree.
 """
 
 import logging
+
+from app import config
 import re
 from dataclasses import dataclass, field
 
@@ -96,11 +98,36 @@ MAP_COMPLETION_TOKENS = 1_500
 
 # Reduce-step limits.
 SUMMARY_TOKEN_CAP = 175
-MAX_CHUNKS = 14
-REDUCE_INPUT_TOKENS = 2_800
+
+# Every number above and below derives from Groq's 8,000 TPM window, which is
+# what the whole map-reduce architecture was built to survive. Gemini's window
+# is ~250k TPM with a 1M-token context, so on that provider the binding limit
+# is REQUESTS per minute, not tokens — and each map call is one more request.
+# Chunking a document that fits in one context window is therefore pure added
+# latency and pure added quota burn there.
+#
+# So the reduce-step ceilings scale with the provider: Groq keeps its original,
+# carefully-derived values exactly (rollback safety), while Gemini gets limits
+# sized to its own window.
+_GEMINI = config.LLM_PROVIDER == "gemini"
+
+# Maximum chunks the reduce step can hold. Groq: 14 (14 x 175 summary tokens
+# ~= the 2,800-token reduce input budget, ~40 pages of source). Gemini: the
+# reduce input is no longer the constraint, so this only bounds how many
+# requests one job may spend.
+MAX_CHUNKS = 60 if _GEMINI else 14
+REDUCE_INPUT_TOKENS = 12_000 if _GEMINI else 2_800
 
 # Below this, chunking is pure overhead — the source already fits one call.
-CHUNKING_THRESHOLD_TOKENS = CHUNK_TOKENS
+#
+# Groq: CHUNK_TOKENS (2,000), because prompt + completion must share one 8,000
+# TPM window.
+# Gemini: 200,000 — a deliberate safety margin under the 1M-token context and
+# the per-minute token allowance, leaving room for the system prompt, the
+# per-deliverable instructions and the completion on top of the source. Do not
+# raise this without re-checking both limits.
+FAST_PATH_MAX_TOKENS = 200_000
+CHUNKING_THRESHOLD_TOKENS = FAST_PATH_MAX_TOKENS if _GEMINI else CHUNK_TOKENS
 
 TPM_LIMIT = 8_000
 

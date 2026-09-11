@@ -72,10 +72,14 @@ async def map_chunk(client: llm.GroqClient, chunk: Chunk, total: int) -> ChunkSu
     # completion reservation is cut for the same reason: _enforce_cap discards
     # anything past SUMMARY_TOKEN_CAP anyway, and Groq charges the full
     # reservation against the per-minute window whether it is used or not.
+    # `label` tags this call in llm.chat's truncation-cascade logs, so a map
+    # escalation reads as "map chunk 3/5" rather than being indistinguishable
+    # from a deliverable-generation escalation.
     result = await client.chat(
         [llm.text_message("user", prompt)],
         reasoning_effort="low",
         max_tokens=MAP_COMPLETION_TOKENS,
+        label=f"map chunk {chunk.index}/{total}",
     )
     return ChunkSummary(index=chunk.index, text=_enforce_cap(result.text.strip(), chunk.index))
 
